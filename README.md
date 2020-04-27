@@ -4,7 +4,8 @@
 
 
 
-```import (
+```
+import (
  	queue "bitbucket.goods.ru/PIM/kafka-adapter"
  	"log"
  )
