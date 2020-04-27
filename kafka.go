@@ -214,25 +214,35 @@ func (k *kafkaQueueImpl) Get(queue string) (Message, error) {
 
 func (k *kafkaQueueImpl) Close() {
 	close(k.closed)
+	wg := sync.WaitGroup{}
 	for _, rchan := range k.readers {
 		for {
 			select {
 			case r := <-rchan:
-				err := r.Close()
-				if err != nil {
-					k.logger.Errorf("err during reader closing: %v", err)
-				}
+				wg.Add(1)
+				go func() {
+					err := r.Close()
+					if err != nil {
+						k.logger.Errorf("err during reader closing: %v", err)
+					}
+					wg.Done()
+				}()
 			default:
 
 			}
 		}
 	}
 	for _, w := range k.writers {
-		err := w.Close()
-		if err != nil {
-			k.logger.Errorf("err during writer closing: %v", err)
-		}
+		wg.Add(1)
+		go func() {
+			err := w.Close()
+			if err != nil {
+				k.logger.Errorf("err during writer closing: %v", err)
+			}
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 }
 
 type kafkaMessageImpl struct {
