@@ -3,7 +3,8 @@
 Адаптер предоставляет возможность работать с нужными топиками кафка на чтение и запись сообщений с их подтверждением.
 
 
-`import (
+
+```import (
  	queue "bitbucket.goods.ru/PIM/kafka-adapter"
  	"log"
  )
@@ -12,7 +13,7 @@
  	topic := "my_topic"
  	broker := "kafka-01-croc.test.lan:9092"
  	messageToSend := []byte("some message")
- 
+ 	
  	cfg := queue.KafkaCfg{
  		Concurrency:       1,
  		QueueToReadNames:  []string{topic},
@@ -44,4 +45,6 @@
  	if err != nil{
  		log.Fatalf("cant ack message: %v", err)
  	}
- }`
+ }
+```
+dsajnhgj
