@@ -141,8 +141,12 @@ func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaM
 	}()
 
 	for {
+		select {
+		case <-k.closed:
+			return
+		default:
+		}
 		r := <-rch
-
 		msg, err := r.FetchMessage(ctx)
 		if err != nil {
 			k.logger.Errorf("error during fetching message from kafka: %v", err)
