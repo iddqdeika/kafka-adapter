@@ -149,7 +149,6 @@ func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaM
 		r := <-rch
 		msg, err := r.FetchMessage(ctx)
 		if err != nil {
-			k.logger.Errorf("error during fetching message from kafka: %v", err)
 			rch <- r
 			continue
 		}
@@ -216,6 +215,7 @@ func (k *kafkaQueueImpl) Close() {
 	close(k.closed)
 	wg := sync.WaitGroup{}
 	for _, rchan := range k.readers {
+	readers:
 		for {
 			select {
 			case r := <-rchan:
@@ -228,7 +228,7 @@ func (k *kafkaQueueImpl) Close() {
 					wg.Done()
 				}()
 			default:
-
+				break readers
 			}
 		}
 	}
