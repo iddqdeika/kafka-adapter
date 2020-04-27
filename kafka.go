@@ -130,8 +130,19 @@ func (k *kafkaQueueImpl) init() error {
 
 func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaMessageImpl) {
 	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-k.closed:
+			cancel()
+		case <-ctx.Done():
+			return
+		}
+	}()
+
 	for {
 		r := <-rch
+
 		msg, err := r.FetchMessage(ctx)
 		if err != nil {
 			k.logger.Errorf("error during fetching message from kafka: %v", err)
@@ -198,6 +209,7 @@ func (k *kafkaQueueImpl) Get(queue string) (Message, error) {
 }
 
 func (k *kafkaQueueImpl) Close() {
+	close(k.closed)
 	for _, rchan := range k.readers {
 		for {
 			select {

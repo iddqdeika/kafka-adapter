@@ -2,6 +2,9 @@
 
 Адаптер предоставляет возможность работать с нужными топиками кафка на чтение и запись сообщений с их подтверждением.
 
+#### Важно:
+Если ConsumerGroupID установлен как пустая строка, то сообщения будут автоматически подтверждены при чтении, 
+а попытка подтверждения (msg.Ack()/msg.Nack()) будет возвращать ошибку "unavailable when GroupID is not set"
 
 #### Простой пример:
 ```
@@ -12,6 +15,7 @@ import (
  
  func simple() {
  	topic := "my_topic"
+    consumerGroup := "my_group"
  	broker := "my-kafka-host.lan:9092"
  	messageToSend := []byte("some message")
  	
@@ -20,7 +24,7 @@ import (
  		QueueToReadNames:  []string{topic},
  		QueueToWriteNames: []string{topic},
  		Brokers:           []string{broker},
- 		ConsumerGroupID:   "",
+ 		ConsumerGroupID:   consumerGroup,
  	}
  
  	q, err := queue.FromStruct(cfg, queue.DefaultLogger)

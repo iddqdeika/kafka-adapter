@@ -6,12 +6,12 @@ import (
 )
 
 func simple() {
-	topic := "my_topic"
+	topic := "fpu-test-p"
 	broker := "kafka-01-croc.test.lan:9092"
 	messageToSend := []byte("some message")
 
 	cfg := queue.KafkaCfg{
-		Concurrency:       1,
+		Concurrency:       100,
 		QueueToReadNames:  []string{topic},
 		QueueToWriteNames: []string{topic},
 		Brokers:           []string{broker},
