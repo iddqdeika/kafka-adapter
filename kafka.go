@@ -159,6 +159,10 @@ func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaM
 			reader: r,
 			rch:    rch,
 		}
+		// если консумергруппа пуста, то месседжи подтверждаются автоматически и удерживать ридер нет смысла.
+		if k.cfg.ConsumerGroupID == "" {
+			mi.once.Do(mi.returnReader)
+		}
 		select {
 		case ch <- &mi:
 			k.logger.Infof("kafka message emitted from producer")
