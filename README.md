@@ -3,7 +3,7 @@
 Адаптер предоставляет возможность работать с нужными топиками кафка на чтение и запись сообщений с их подтверждением.
 
 
-
+#### Простой пример:
 ```
 import (
  	queue "bitbucket.goods.ru/PIM/kafka-adapter"
@@ -12,7 +12,7 @@ import (
  
  func simple() {
  	topic := "my_topic"
- 	broker := "kafka-01-croc.test.lan:9092"
+ 	broker := "my-kafka-host.lan:9092"
  	messageToSend := []byte("some message")
  	
  	cfg := queue.KafkaCfg{
@@ -48,4 +48,4 @@ import (
  	}
  }
 ```
-dsajnhgj
+
