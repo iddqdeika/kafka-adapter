@@ -84,7 +84,7 @@ func (k *kafkaQueueImpl) init() error {
 		return fmt.Errorf("must be at least one value in QueueNames in cfg")
 	}
 	if k.cfg.Concurrency < 1 {
-		return fmt.Errorf("must be at least one value in Concurrency in cfg")
+		k.cfg.Concurrency = 1
 	}
 
 	k.readers = make(map[string]chan *kafka.Reader)
@@ -176,6 +176,11 @@ func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaM
 }
 
 func (k *kafkaQueueImpl) Put(queue string, data []byte) error {
+	ctx := context.Background()
+	return k.PutWithCtx(ctx, queue, data)
+}
+
+func (k *kafkaQueueImpl) PutWithCtx(ctx context.Context, queue string, data []byte) error {
 	select {
 	case <-k.closed:
 		return ErrClosed
@@ -183,7 +188,7 @@ func (k *kafkaQueueImpl) Put(queue string, data []byte) error {
 
 	}
 	if w, ok := k.writers[queue]; ok {
-		err := w.WriteMessages(context.Background(), kafka.Message{Value: data})
+		err := w.WriteMessages(ctx, kafka.Message{Value: data})
 		if err != nil {
 			return fmt.Errorf("error during writing message to kafka: %v", err)
 		}
@@ -193,13 +198,17 @@ func (k *kafkaQueueImpl) Put(queue string, data []byte) error {
 }
 
 func (k *kafkaQueueImpl) Get(queue string) (Message, error) {
+	ctx := context.Background()
+	return k.GetWithCtx(ctx, queue)
+}
+
+func (k *kafkaQueueImpl) GetWithCtx(ctx context.Context, queue string) (Message, error) {
 	select {
 	case <-k.closed:
 		return nil, ErrClosed
 	default:
 
 	}
-	ctx := context.Background()
 	mch, ok := k.messages[queue]
 	if !ok {
 		return nil, fmt.Errorf("there is no such topic declared in config: %v", queue)
@@ -207,7 +216,7 @@ func (k *kafkaQueueImpl) Get(queue string) (Message, error) {
 
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("context is closed")
+		return nil, fmt.Errorf("context was closed")
 	case <-k.closed:
 		return nil, ErrClosed
 	case msg := <-mch:
