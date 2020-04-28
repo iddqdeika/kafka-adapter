@@ -1,10 +1,27 @@
 # Kafka Adapter
 
-Адаптер предоставляет возможность работать с нужными топиками кафка на чтение и запись сообщений с их подтверждением.
+Adapter provides possibility to work with kafka topics for writing messages and reading with Ack/Nack functionality.
+
+Two main interfaces in `Queue` (instance of adapter) and `Message`
+
+`Queue.PutWithCtx(ctx context.Context, topic string, data []byte) error`  - puts given data into topic, returns error when ctx was closed
+
+`Queue.Put(topic string, data []byte) error`  - the same method, but with context.Background() ctx.
+
+`Queue.GetWithCtx(ctx context.Context, topic string) (Message, error)` - gets single message from topic, returns error when ctx was closed
+
+`Queue.Get(topic string) (Message, error)` - the same method, but with context.Background() ctx.
+
+`Message.Data() []byte` - returns kafka message body
+
+`Message.Ack() error` - acquires message, incrementing kafka's partition offset
+
+`Message.Nack() error` - unacquires message, with reader re-establishing, to enable other consumers within consumer group to read this message. NOTE: to enable this functionality - summ of Concurrency param on all Consumers with same ConsumerGroupID must be higher than topic's partition count
+
 
 #### Important:
-If ConsumerGroupID is empty, then each message would be auto-acked, 
-and acquiring (msg.Ack()/msg.Nack()) would return "unavailable when GroupID is not set" error.
+If ConsumerGroupID was not set in config (or equals to empty string), then each message would be auto-acked, 
+and acquiring (msg.Ack()/msg.Nack()) would return "unavailable when GroupID is not set" error. 
 
 #### Example:
 ```
