@@ -2,18 +2,18 @@
 
 Адаптер предоставляет возможность работать с нужными топиками кафка на чтение и запись сообщений с их подтверждением.
 
-#### Важно:
-Если ConsumerGroupID установлен как пустая строка, то сообщения будут автоматически подтверждены при чтении, 
-а попытка подтверждения (msg.Ack()/msg.Nack()) будет возвращать ошибку "unavailable when GroupID is not set"
+#### Important:
+If ConsumerGroupID is empty, then each message would be auto-acked, 
+and acquiring (msg.Ack()/msg.Nack()) would return "unavailable when GroupID is not set" error.
 
-#### Простой пример:
+#### Example:
 ```
 import (
-    queue "bitbucket.goods.ru/PIM/kafka-adapter"
+    queue "github.com/iddqdeika/kafka-adapter"
     "log"
  )
  
- func simple() {
+ func example() {
     topic := "my_topic"
     consumerGroup := "my_group"
     broker := "my-kafka-host.lan:9092"
@@ -59,3 +59,7 @@ import (
  }
 ```
 
+### Additional:
+FromConfig(cfg Config, logger Logger) - constructor, which uses interface Config
+LoadJsonConfig(filename string) - Config implementation, loading data from json file
+DefaultLogger - default implementation of logger, just forwards all errors to fmt.Pringf method
