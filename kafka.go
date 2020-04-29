@@ -10,11 +10,11 @@ import (
 
 var ErrClosed error = fmt.Errorf("kafka adapter is closed")
 
-func FromStruct(cfg KafkaCfg, logger Logger) (Queue, error) {
+func FromStruct(cfg KafkaCfg, logger Logger) (*Queue, error) {
 	return newKafkaQueue(cfg, logger)
 }
 
-func FromConfig(cfg Config, logger Logger) (Queue, error) {
+func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 	brokers, err := cfg.GetString("KAFKA.BROKERS")
 	if err != nil {
 		return nil, fmt.Errorf("cant read config: %v", err)
@@ -40,8 +40,8 @@ func FromConfig(cfg Config, logger Logger) (Queue, error) {
 	}, logger)
 }
 
-func newKafkaQueue(cfg KafkaCfg, logger Logger) (Queue, error) {
-	q := &kafkaQueueImpl{
+func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
+	q := &Queue{
 		cfg:    cfg,
 		logger: logger,
 	}
@@ -67,17 +67,17 @@ type KafkaCfg struct {
 	ConsumerGroupID string
 }
 
-type kafkaQueueImpl struct {
+type Queue struct {
 	cfg      KafkaCfg
 	logger   Logger
 	c        *kafka.Client
 	readers  map[string]chan *kafka.Reader
-	messages map[string]chan *kafkaMessageImpl
+	messages map[string]chan *Message
 	writers  map[string]*kafka.Writer
 	closed   chan struct{}
 }
 
-func (k *kafkaQueueImpl) init() error {
+func (k *Queue) init() error {
 
 	//lets check some shit
 	if len(k.cfg.QueueToReadNames) < 1 && len(k.cfg.QueueToWriteNames) < 1 {
@@ -88,7 +88,7 @@ func (k *kafkaQueueImpl) init() error {
 	}
 
 	k.readers = make(map[string]chan *kafka.Reader)
-	k.messages = make(map[string]chan *kafkaMessageImpl)
+	k.messages = make(map[string]chan *Message)
 	k.writers = make(map[string]*kafka.Writer)
 	k.closed = make(chan struct{})
 
@@ -98,7 +98,7 @@ func (k *kafkaQueueImpl) init() error {
 			continue
 		}
 		ch := make(chan *kafka.Reader, k.cfg.Concurrency)
-		msgChan := make(chan *kafkaMessageImpl)
+		msgChan := make(chan *Message)
 		for i := 0; i < k.cfg.Concurrency; i++ {
 			r := kafka.NewReader(kafka.ReaderConfig{
 				Brokers:  k.cfg.Brokers,
@@ -128,7 +128,7 @@ func (k *kafkaQueueImpl) init() error {
 	return nil
 }
 
-func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaMessageImpl) {
+func (k *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
@@ -154,7 +154,7 @@ func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaM
 		}
 		// суть в том, что ридер вернется в канал ридеров только при ack/nack, не раньше.
 		// следующее сообщение с ридера читать нельзя, пока не будет ack/nack на предыдущем.
-		mi := kafkaMessageImpl{
+		mi := Message{
 			msg:    &msg,
 			reader: r,
 			rch:    rch,
@@ -165,7 +165,7 @@ func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaM
 		}
 		select {
 		case ch <- &mi:
-			k.logger.Infof("kafka message emitted from producer")
+			k.logger.Infof("kafka Message emitted from producer")
 		case <-ctx.Done():
 			err := r.Close()
 			if err != nil {
@@ -175,12 +175,12 @@ func (k *kafkaQueueImpl) produceMessages(rch chan *kafka.Reader, ch chan *kafkaM
 	}
 }
 
-func (k *kafkaQueueImpl) Put(queue string, data []byte) error {
+func (k *Queue) Put(queue string, data []byte) error {
 	ctx := context.Background()
 	return k.PutWithCtx(ctx, queue, data)
 }
 
-func (k *kafkaQueueImpl) PutWithCtx(ctx context.Context, queue string, data []byte) error {
+func (k *Queue) PutWithCtx(ctx context.Context, queue string, data []byte) error {
 	select {
 	case <-k.closed:
 		return ErrClosed
@@ -190,19 +190,19 @@ func (k *kafkaQueueImpl) PutWithCtx(ctx context.Context, queue string, data []by
 	if w, ok := k.writers[queue]; ok {
 		err := w.WriteMessages(ctx, kafka.Message{Value: data})
 		if err != nil {
-			return fmt.Errorf("error during writing message to kafka: %v", err)
+			return fmt.Errorf("error during writing Message to kafka: %v", err)
 		}
 		return nil
 	}
 	return fmt.Errorf("there is no such topic declared in config: %v", queue)
 }
 
-func (k *kafkaQueueImpl) Get(queue string) (Message, error) {
+func (k *Queue) Get(queue string) (*Message, error) {
 	ctx := context.Background()
 	return k.GetWithCtx(ctx, queue)
 }
 
-func (k *kafkaQueueImpl) GetWithCtx(ctx context.Context, queue string) (Message, error) {
+func (k *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) {
 	select {
 	case <-k.closed:
 		return nil, ErrClosed
@@ -224,7 +224,7 @@ func (k *kafkaQueueImpl) GetWithCtx(ctx context.Context, queue string) (Message,
 	}
 }
 
-func (k *kafkaQueueImpl) Close() {
+func (k *Queue) Close() {
 	close(k.closed)
 	wg := sync.WaitGroup{}
 	for _, rchan := range k.readers {
@@ -258,33 +258,33 @@ func (k *kafkaQueueImpl) Close() {
 	wg.Wait()
 }
 
-type kafkaMessageImpl struct {
+type Message struct {
 	msg    *kafka.Message
 	reader *kafka.Reader
 	rch    chan *kafka.Reader
 	once   sync.Once
 }
 
-func (k *kafkaMessageImpl) Data() []byte {
+func (k *Message) Data() []byte {
 	return k.msg.Value
 }
 
-func (k *kafkaMessageImpl) returnReader() {
+func (k *Message) returnReader() {
 	k.rch <- k.reader
 }
 
-func (k *kafkaMessageImpl) returnNewReader() {
+func (k *Message) returnNewReader() {
 	k.rch <- kafka.NewReader(k.reader.Config())
 	k.reader.Close()
 }
 
-func (k *kafkaMessageImpl) Ack() error {
+func (k *Message) Ack() error {
 	err := k.reader.CommitMessages(context.Background(), *k.msg)
 	k.once.Do(k.returnReader)
 	return err
 }
 
-func (k *kafkaMessageImpl) Nack() error {
+func (k *Message) Nack() error {
 	k.once.Do(k.returnNewReader)
 	return nil
 }
