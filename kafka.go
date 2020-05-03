@@ -31,8 +31,12 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cant read config: %v", err)
 	}
+	concurrency, err := cfg.GetInt("KAFKA.CONCURRENCY")
+	if err != nil {
+		return nil, fmt.Errorf("cant read config: %v", err)
+	}
 	return newKafkaQueue(KafkaCfg{
-		Concurrency:       200,
+		Concurrency:       concurrency,
 		QueueToReadNames:  strings.Split(queuesToRead, ";"),
 		QueueToWriteNames: strings.Split(queuesToWrite, ";"),
 		Brokers:           strings.Split(brokers, ";"),
