@@ -96,6 +96,15 @@ func (k *Queue) init() error {
 	k.writers = make(map[string]*kafka.Writer)
 	k.closed = make(chan struct{})
 
+	//some checkup
+	for _, b := range k.cfg.Brokers {
+		conn, err := kafka.Dial("tcp", b)
+		if err != nil {
+			return fmt.Errorf("cant connect to broker %v, err: %v", b, err)
+		}
+		conn.Close()
+	}
+
 	//fill readers
 	for _, topic := range k.cfg.QueueToReadNames {
 		if topic == "" {
