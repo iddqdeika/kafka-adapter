@@ -162,6 +162,7 @@ func (k *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
 		r := <-rch
 		msg, err := r.FetchMessage(ctx)
 		if err != nil {
+			k.logger.Errorf("error during kafka message fetching: %v", err)
 			rch <- r
 			continue
 		}
