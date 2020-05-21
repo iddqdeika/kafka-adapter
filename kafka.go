@@ -35,12 +35,22 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cant read config: %v", err)
 	}
+	batchSize, err := cfg.GetInt("KAFKA.BATCH_SIZE")
+	if err != nil {
+		return nil, fmt.Errorf("cant read config: %v", err)
+	}
+	async, err := cfg.GetInt("KAFKA.ASYNC")
+	if err != nil {
+		return nil, fmt.Errorf("cant read config: %v", err)
+	}
 	return newKafkaQueue(KafkaCfg{
 		Concurrency:       concurrency,
 		QueueToReadNames:  strings.Split(queuesToRead, ";"),
 		QueueToWriteNames: strings.Split(queuesToWrite, ";"),
 		Brokers:           strings.Split(brokers, ";"),
 		ConsumerGroupID:   consumerGroup,
+		BatchSize:         batchSize,
+		Async:             async == 1,
 	}, logger)
 }
 
