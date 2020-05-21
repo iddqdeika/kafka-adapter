@@ -63,6 +63,18 @@ type KafkaCfg struct {
 	//possible topic partition count!
 	Concurrency int
 
+	//max batch size that will be delivered by single writer at once
+	//in sync mode writer waits for batch is full or batch timeout outcome
+	//default is 100
+	BatchSize int
+
+	//enables async mode
+	//in async mode writer will not wait acquirement of successfull write operation
+	//thats why Put method will not return any error and will not be blocked
+	//use it if you dont need delivery guarantee
+	//default is false
+	Async bool
+
 	QueueToReadNames  []string
 	QueueToWriteNames []string
 
@@ -132,9 +144,11 @@ func (k *Queue) init() error {
 			continue
 		}
 		w := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:  k.cfg.Brokers,
-			Topic:    topic,
-			Balancer: &kafka.LeastBytes{},
+			Brokers:   k.cfg.Brokers,
+			BatchSize: k.cfg.BatchSize,
+			Async:     k.cfg.Async,
+			Topic:     topic,
+			Balancer:  &kafka.LeastBytes{},
 		})
 		k.writers[topic] = w
 	}
@@ -195,14 +209,28 @@ func (k *Queue) Put(queue string, data []byte) error {
 }
 
 func (k *Queue) PutWithCtx(ctx context.Context, queue string, data []byte) error {
+	return k.PutBatchWithCtx(ctx, queue, data)
+}
+
+func (k *Queue) PutBatch(queue string, data ...[]byte) error {
+	return k.PutBatchWithCtx(context.Background(), queue, data...)
+}
+
+func (k *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byte) error {
 	select {
 	case <-k.closed:
 		return ErrClosed
 	default:
 
 	}
+
+	msgs := make([]kafka.Message, 0)
+	for _, d := range data {
+		msgs = append(msgs, kafka.Message{Value: d})
+	}
+
 	if w, ok := k.writers[queue]; ok {
-		err := w.WriteMessages(ctx, kafka.Message{Value: data})
+		err := w.WriteMessages(ctx, msgs...)
 		if err != nil {
 			return fmt.Errorf("error during writing Message to kafka: %v", err)
 		}
