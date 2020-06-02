@@ -22,7 +22,7 @@ type TopicManager struct {
 	dtc       DefaultTopicConfig
 }
 
-//ensures that topic with given name was created
+//Ensures that topic with given name was created
 func (m *TopicManager) EnsureTopic(topicName string) error {
 	return m.EnsureTopicWithCtx(context.Background(), topicName)
 }
