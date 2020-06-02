@@ -23,7 +23,7 @@ type TopicManager struct {
 }
 
 func (m *TopicManager) EnsureTopic(topicName string) error {
-	m.EnsureTopicWithCtx(context.Background(), topicName)
+	return m.EnsureTopicWithCtx(context.Background(), topicName)
 }
 
 func (m *TopicManager) EnsureTopicWithCtx(ctx context.Context, topicName string) error {
