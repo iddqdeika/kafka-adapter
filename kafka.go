@@ -166,6 +166,9 @@ func (k *Queue) init() error {
 func (k *Queue) ReaderRegister(topic string) {
 	k.m.Lock()
 	defer k.m.Unlock()
+	if _, ok := k.readers[topic]; ok {
+		return
+	}
 	if topic == "" {
 		return
 	}
@@ -189,6 +192,9 @@ func (k *Queue) ReaderRegister(topic string) {
 func (k *Queue) WriterRegister(topic string) {
 	k.m.Lock()
 	defer k.m.Unlock()
+	if _, ok := k.writers[topic]; ok {
+		return
+	}
 	if topic == "" {
 		return
 	}
