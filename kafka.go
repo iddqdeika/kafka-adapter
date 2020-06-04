@@ -43,6 +43,14 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cant read config: %v", err)
 	}
+	pnum, err := cfg.GetInt("KAFKA.DEFAULT_TOPIC_CONFIG.NUM_PARTITIONS")
+	if err != nil {
+		return nil, fmt.Errorf("cant read config: %v", err)
+	}
+	rfactor, err := cfg.GetInt("KAFKA.DEFAULT_TOPIC_CONFIG.REPLICATION_FACTOR")
+	if err != nil {
+		return nil, fmt.Errorf("cant read config: %v", err)
+	}
 	return newKafkaQueue(KafkaCfg{
 		Concurrency:       concurrency,
 		QueueToReadNames:  strings.Split(queuesToRead, ";"),
@@ -51,10 +59,18 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 		ConsumerGroupID:   consumerGroup,
 		BatchSize:         batchSize,
 		Async:             async == 1,
+		DefaultTopicConfig: DefaultTopicConfig{
+			NumPartitions:     pnum,
+			ReplicationFactor: rfactor,
+		},
 	}, logger)
 }
 
 func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
+	if cfg.DefaultTopicConfig.NumPartitions < 1 {
+		return nil, fmt.Errorf("incorrect DefaultTopicConfig, numpartitions must be more than 1")
+	}
+
 	q := &Queue{
 		cfg:    cfg,
 		logger: logger,
