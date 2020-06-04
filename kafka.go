@@ -91,6 +91,13 @@ type KafkaCfg struct {
 	Brokers []string
 
 	ConsumerGroupID string
+
+	DefaultTopicConfig DefaultTopicConfig
+}
+
+type DefaultTopicConfig struct {
+	NumPartitions     int
+	ReplicationFactor int
 }
 
 type Queue struct {
@@ -101,6 +108,8 @@ type Queue struct {
 	messages map[string]chan *Message
 	writers  map[string]*kafka.Writer
 	closed   chan struct{}
+
+	m sync.RWMutex
 }
 
 func (k *Queue) init() error {
@@ -129,45 +138,58 @@ func (k *Queue) init() error {
 
 	//fill readers
 	for _, topic := range k.cfg.QueueToReadNames {
-		if topic == "" {
-			continue
-		}
-		ch := make(chan *kafka.Reader, k.cfg.Concurrency)
-		msgChan := make(chan *Message)
-		for i := 0; i < k.cfg.Concurrency; i++ {
-			r := kafka.NewReader(kafka.ReaderConfig{
-				Brokers:  k.cfg.Brokers,
-				GroupID:  k.cfg.ConsumerGroupID,
-				Topic:    topic,
-				MinBytes: 10e1,
-				MaxBytes: 10e3,
-			})
-			ch <- r
-			go k.produceMessages(ch, msgChan)
-		}
-		k.readers[topic] = ch
-		k.messages[topic] = msgChan
+		k.ReaderRegister(topic)
 	}
 	//fill writers
 	for _, topic := range k.cfg.QueueToWriteNames {
-		if topic == "" {
-			continue
-		}
-		w := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:   k.cfg.Brokers,
-			BatchSize: k.cfg.BatchSize,
-			Async:     k.cfg.Async,
-			Topic:     topic,
-			Balancer:  &kafka.LeastBytes{},
-		})
-		k.writers[topic] = w
+		k.WriterRegister(topic)
 	}
 	return nil
+}
+
+func (k *Queue) ReaderRegister(topic string) {
+	k.m.Lock()
+	defer k.m.Unlock()
+	if topic == "" {
+		return
+	}
+	ch := make(chan *kafka.Reader, k.cfg.Concurrency)
+	msgChan := make(chan *Message)
+	for i := 0; i < k.cfg.Concurrency; i++ {
+		r := kafka.NewReader(kafka.ReaderConfig{
+			Brokers:  k.cfg.Brokers,
+			GroupID:  k.cfg.ConsumerGroupID,
+			Topic:    topic,
+			MinBytes: 10e1,
+			MaxBytes: 10e3,
+		})
+		ch <- r
+		go k.produceMessages(ch, msgChan)
+	}
+	k.readers[topic] = ch
+	k.messages[topic] = msgChan
+}
+
+func (k *Queue) WriterRegister(topic string) {
+	k.m.Lock()
+	defer k.m.Unlock()
+	if topic == "" {
+		return
+	}
+	w := kafka.NewWriter(kafka.WriterConfig{
+		Brokers:   k.cfg.Brokers,
+		BatchSize: k.cfg.BatchSize,
+		Async:     k.cfg.Async,
+		Topic:     topic,
+		Balancer:  &kafka.LeastBytes{},
+	})
+	k.writers[topic] = w
 }
 
 func (k *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	go func() {
 		select {
 		case <-k.closed:
@@ -238,7 +260,8 @@ func (k *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byt
 	for _, d := range data {
 		msgs = append(msgs, kafka.Message{Value: d})
 	}
-
+	k.m.RLock()
+	defer k.m.RUnlock()
 	if w, ok := k.writers[queue]; ok {
 		err := w.WriteMessages(ctx, msgs...)
 		if err != nil {
@@ -261,6 +284,9 @@ func (k *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) 
 	default:
 
 	}
+
+	k.m.RLock()
+	defer k.m.RUnlock()
 	mch, ok := k.messages[queue]
 	if !ok {
 		return nil, fmt.Errorf("there is no such topic declared in config: %v", queue)
@@ -279,6 +305,8 @@ func (k *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) 
 func (k *Queue) Close() {
 	close(k.closed)
 	wg := sync.WaitGroup{}
+	k.m.Lock()
+	defer k.m.Unlock()
 	for _, rchan := range k.readers {
 	readers:
 		for {
@@ -293,6 +321,7 @@ func (k *Queue) Close() {
 					wg.Done()
 				}()
 			default:
+				close(rchan)
 				break readers
 			}
 		}
@@ -308,6 +337,26 @@ func (k *Queue) Close() {
 		}()
 	}
 	wg.Wait()
+}
+
+//Ensures that topic with given name was created
+func (q *Queue) EnsureTopic(topicName string) error {
+	return q.EnsureTopicWithCtx(context.Background(), topicName)
+}
+
+func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error {
+	if q.cfg.Brokers == nil || len(q.cfg.Brokers) == 1 {
+		return fmt.Errorf("brokers list are empty in cfg")
+	}
+	conn, err := kafka.DialContext(ctx, "tcp", q.cfg.Brokers[0])
+	if err != nil {
+		return err
+	}
+	return conn.CreateTopics(kafka.TopicConfig{
+		Topic:             topicName,
+		NumPartitions:     q.cfg.DefaultTopicConfig.NumPartitions,
+		ReplicationFactor: q.cfg.DefaultTopicConfig.ReplicationFactor,
+	})
 }
 
 type Message struct {
