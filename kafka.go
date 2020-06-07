@@ -369,8 +369,8 @@ func (q *Queue) EnsureTopic(topicName string) error {
 }
 
 func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error {
-	if q.cfg.Brokers == nil || len(q.cfg.Brokers) <= 0 {
-		return fmt.Errorf("brokers list are empty in cfg")
+	if q.cfg.ControllerAddress == "" {
+		return fmt.Errorf("controller address was not set in cfg")
 	}
 	conn, err := kafka.DialContext(ctx, "tcp", q.cfg.Brokers[0])
 	if err != nil {
