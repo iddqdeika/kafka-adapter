@@ -363,7 +363,7 @@ func (k *Queue) Close() {
 	wg.Wait()
 }
 
-//Ensures that topic with given name was created with background context
+//Ensures that topic with given name was created with background context set
 func (q *Queue) EnsureTopic(topicName string) error {
 	return q.EnsureTopicWithCtx(context.Background(), topicName)
 }
