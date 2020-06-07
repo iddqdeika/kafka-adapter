@@ -333,7 +333,6 @@ func (k *Queue) Close() {
 	default:
 		close(k.closed)
 	}
-
 	wg := sync.WaitGroup{}
 	k.m.Lock()
 	defer k.m.Unlock()
