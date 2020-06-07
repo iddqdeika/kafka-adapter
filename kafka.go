@@ -363,11 +363,12 @@ func (k *Queue) Close() {
 	wg.Wait()
 }
 
-//Ensures that topic with given name was created
+//Ensures that topic with given name was created with background context
 func (q *Queue) EnsureTopic(topicName string) error {
 	return q.EnsureTopicWithCtx(context.Background(), topicName)
 }
 
+//Ensures that topic with given name was created
 func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error {
 	if q.cfg.ControllerAddress == "" {
 		return fmt.Errorf("controller address was not set in cfg")
