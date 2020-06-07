@@ -372,7 +372,7 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 	if q.cfg.ControllerAddress == "" {
 		return fmt.Errorf("controller address was not set in cfg")
 	}
-	conn, err := kafka.DialContext(ctx, "tcp", q.cfg.Brokers[0])
+	conn, err := kafka.DialContext(ctx, "tcp", q.cfg.ControllerAddress)
 	if err != nil {
 		return err
 	}
