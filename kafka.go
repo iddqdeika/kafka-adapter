@@ -130,10 +130,6 @@ type Queue struct {
 
 func (k *Queue) init() error {
 
-	//lets check some shit
-	if len(k.cfg.QueueToReadNames) < 1 && len(k.cfg.QueueToWriteNames) < 1 {
-		return fmt.Errorf("must be at least one value in QueueNames in cfg")
-	}
 	if k.cfg.Concurrency < 1 {
 		k.cfg.Concurrency = 1
 	}
