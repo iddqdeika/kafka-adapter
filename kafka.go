@@ -329,7 +329,7 @@ func (k *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) 
 func (k *Queue) Close() {
 	select {
 	case <-k.closed:
-		break
+		return
 	default:
 		close(k.closed)
 	}
