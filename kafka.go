@@ -19,6 +19,10 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cant read config: %v", err)
 	}
+	controller, err := cfg.GetString("KAFKA.CONTROLLER_ADDRESS")
+	if err != nil {
+		return nil, fmt.Errorf("cant read config: %v", err)
+	}
 	queuesToRead, err := cfg.GetString("KAFKA.QUEUES_TO_READ")
 	if err != nil {
 		return nil, fmt.Errorf("cant read config: %v", err)
@@ -56,6 +60,7 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 		QueueToReadNames:  strings.Split(queuesToRead, ";"),
 		QueueToWriteNames: strings.Split(queuesToWrite, ";"),
 		Brokers:           strings.Split(brokers, ";"),
+		ControllerAddress: controller,
 		ConsumerGroupID:   consumerGroup,
 		BatchSize:         batchSize,
 		Async:             async == 1,
@@ -104,7 +109,8 @@ type KafkaCfg struct {
 	QueueToReadNames  []string
 	QueueToWriteNames []string
 
-	Brokers []string
+	Brokers           []string
+	ControllerAddress string
 
 	ConsumerGroupID string
 
