@@ -327,7 +327,13 @@ func (k *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) 
 }
 
 func (k *Queue) Close() {
-	close(k.closed)
+	select {
+	case <-k.closed:
+		break
+	default:
+		close(k.closed)
+	}
+
 	wg := sync.WaitGroup{}
 	k.m.Lock()
 	defer k.m.Unlock()
