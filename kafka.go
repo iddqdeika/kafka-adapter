@@ -375,13 +375,17 @@ func (k *Queue) Close() {
 		}
 	}
 	for _, w := range k.writers {
-		wg.Add(1)
 		go func() {
+			//оставляем это без waitgroup, т.к. в пакете kafka-go баг.
+			//если writemessages закрывается до того, как все результаты внутренних ретраев были считаны
+			//например, при закрытии контекста
+			//то врайтер повисает в воздухе:
+			//writemessages не читает результаты из внутреннего writer
+			//а внутренния writer.write блокируется в попытке записать результаты.
 			err := w.Close()
 			if err != nil {
 				k.logger.Errorf("err during writer closing: %v", err)
 			}
-			wg.Done()
 		}()
 	}
 	wg.Wait()

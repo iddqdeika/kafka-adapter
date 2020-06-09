@@ -48,4 +48,6 @@ func example() {
 		log.Fatalf("cant ack message: %v", err)
 	}
 	log.Printf("message acked")
+	q.Close()
+	log.Printf("adapter closed")
 }
