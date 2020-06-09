@@ -406,12 +406,16 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 		panic(err)
 	}
 	defer a.Close()
-	err = a.CreateTopic(topicName, &sarama.TopicDetail{
-		NumPartitions:     int32(q.cfg.DefaultTopicConfig.NumPartitions),
-		ReplicationFactor: int16(q.cfg.DefaultTopicConfig.ReplicationFactor),
-	}, false)
-	if err != nil {
-		return err
+	topics, err := a.ListTopics()
+	if _, ok := topics[topicName]; !ok {
+		err = a.CreateTopic(topicName, &sarama.TopicDetail{
+			NumPartitions:     int32(q.cfg.DefaultTopicConfig.NumPartitions),
+			ReplicationFactor: int16(q.cfg.DefaultTopicConfig.ReplicationFactor),
+		}, false)
+
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 
