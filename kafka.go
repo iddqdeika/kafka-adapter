@@ -413,6 +413,7 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 	if err != nil {
 		return err
 	}
+	return nil
 
 	//if q.cfg.ControllerAddress == "" {
 	//	return fmt.Errorf("controller address was not set in cfg")
