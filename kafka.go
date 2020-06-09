@@ -3,6 +3,7 @@ package kafkaadapt
 import (
 	"context"
 	"fmt"
+	sarama "github.com/Shopify/sarama"
 	kafka "github.com/segmentio/kafka-go"
 	"strings"
 	"sync"
@@ -398,18 +399,33 @@ func (q *Queue) EnsureTopic(topicName string) error {
 
 //Ensures that topic with given name was created
 func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error {
-	if q.cfg.ControllerAddress == "" {
-		return fmt.Errorf("controller address was not set in cfg")
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V2_3_0_0
+	a, err := sarama.NewClusterAdmin(q.cfg.Brokers, cfg)
+	if err != nil {
+		panic(err)
 	}
-	conn, err := kafka.DialContext(ctx, "tcp", q.cfg.ControllerAddress)
+	defer a.Close()
+	err = a.CreateTopic(topicName, &sarama.TopicDetail{
+		NumPartitions:     int32(q.cfg.DefaultTopicConfig.NumPartitions),
+		ReplicationFactor: int16(q.cfg.DefaultTopicConfig.ReplicationFactor),
+	}, false)
 	if err != nil {
 		return err
 	}
-	return conn.CreateTopics(kafka.TopicConfig{
-		Topic:             topicName,
-		NumPartitions:     q.cfg.DefaultTopicConfig.NumPartitions,
-		ReplicationFactor: q.cfg.DefaultTopicConfig.ReplicationFactor,
-	})
+
+	//if q.cfg.ControllerAddress == "" {
+	//	return fmt.Errorf("controller address was not set in cfg")
+	//}
+	//conn, err := kafka.DialContext(ctx, "tcp", q.cfg.ControllerAddress)
+	//if err != nil {
+	//	return err
+	//}
+	//return conn.CreateTopics(kafka.TopicConfig{
+	//	Topic:             topicName,
+	//	NumPartitions:     q.cfg.DefaultTopicConfig.NumPartitions,
+	//	ReplicationFactor: q.cfg.DefaultTopicConfig.ReplicationFactor,
+	//})
 }
 
 type Message struct {
