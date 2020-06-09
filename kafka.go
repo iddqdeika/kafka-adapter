@@ -329,8 +329,8 @@ func (k *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) 
 	}
 
 	k.m.RLock()
-	defer k.m.RUnlock()
 	mch, ok := k.messages[queue]
+	k.m.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("there is no such topic declared in config: %v", queue)
 	}
