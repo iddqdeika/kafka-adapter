@@ -224,39 +224,54 @@ func (k *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
 	}()
 
 	for {
-		select {
-		case <-k.closed:
+		ok := k.producerIteration(ctx, rch, ch)
+		if !ok {
 			return
-		default:
-		}
-		r := <-rch
-		msg, err := r.FetchMessage(ctx)
-		if err != nil {
-			k.logger.Errorf("error during kafka message fetching: %v", err)
-			rch <- r
-			continue
-		}
-		// суть в том, что ридер вернется в канал ридеров только при ack/nack, не раньше.
-		// следующее сообщение с ридера читать нельзя, пока не будет ack/nack на предыдущем.
-		mi := Message{
-			msg:    &msg,
-			reader: r,
-			rch:    rch,
-		}
-		// если консумергруппа пуста, то месседжи подтверждаются автоматически и удерживать ридер нет смысла.
-		if k.cfg.ConsumerGroupID == "" {
-			mi.once.Do(mi.returnReader)
-		}
-		select {
-		case ch <- &mi:
-			k.logger.Infof("kafka Message emitted from producer")
-		case <-ctx.Done():
-			err := r.Close()
-			if err != nil {
-				k.logger.Errorf("err during reader closing: %v", err)
-			}
 		}
 	}
+}
+
+func (k *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, ch chan *Message) (ok bool) {
+	select {
+	case <-k.closed:
+		return false
+	default:
+	}
+	k.m.RLock()
+	defer k.m.Unlock()
+
+	r, ok := <-rch
+	if !ok {
+		return false
+	}
+
+	msg, err := r.FetchMessage(ctx)
+	if err != nil {
+		k.logger.Errorf("error during kafka message fetching: %v", err)
+		rch <- r
+		return true
+	}
+	// суть в том, что ридер вернется в канал ридеров только при ack/nack, не раньше.
+	// следующее сообщение с ридера читать нельзя, пока не будет ack/nack на предыдущем.
+	mi := Message{
+		msg:    &msg,
+		reader: r,
+		rch:    rch,
+	}
+	// если консумергруппа пуста, то месседжи подтверждаются автоматически и удерживать ридер нет смысла.
+	if k.cfg.ConsumerGroupID == "" {
+		mi.once.Do(mi.returnReader)
+	}
+	select {
+	case ch <- &mi:
+		k.logger.Infof("kafka Message emitted from producer")
+	case <-ctx.Done():
+		err := r.Close()
+		if err != nil {
+			k.logger.Errorf("err during reader closing: %v", err)
+		}
+	}
+	return true
 }
 
 func (k *Queue) Put(queue string, data []byte) error {
@@ -350,7 +365,7 @@ func (k *Queue) Close() {
 					wg.Done()
 				}()
 			default:
-				close(rchan)
+				//здесь можно было бы закрыть канал, но мы не знаем когда кто попробует сообщения закоммитить.
 				break readers
 			}
 		}
