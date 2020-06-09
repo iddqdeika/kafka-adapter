@@ -231,17 +231,21 @@ func (k *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
 	}
 }
 
-func (k *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, ch chan *Message) (ok bool) {
+func (k *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, ch chan *Message) bool {
 	select {
 	case <-k.closed:
 		return false
 	default:
 	}
-	k.m.RLock()
-	defer k.m.Unlock()
 
-	r, ok := <-rch
-	if !ok {
+	var r *kafka.Reader
+	var ok bool
+	select {
+	case r, ok = <-rch:
+		if !ok {
+			return false
+		}
+	case <-ctx.Done():
 		return false
 	}
 
