@@ -1,4 +1,6 @@
 # Kafka Adapter
+usage:
+import "github.com/iddqdeika/kafka-adapter"
 
 Adapter provides possibility to work with kafka topics for writing messages and reading with Ack/Nack functionality.
 
