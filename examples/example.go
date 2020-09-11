@@ -1,14 +1,18 @@
-package examples
+package main
 
 import (
 	queue "github.com/iddqdeika/kafka-adapter"
 	"log"
 )
 
+func main() {
+	example()
+}
+
 func example() {
 	topic := "my_topic"
 	consumerGroup := "my_group"
-	broker := "my-kafka-host.lan:9092"
+	broker := "kafka-01-croc.test.lan:9092"
 	messageToSend := []byte("some message")
 
 	cfg := queue.KafkaCfg{
@@ -17,6 +21,10 @@ func example() {
 		QueueToWriteNames: []string{topic},
 		Brokers:           []string{broker},
 		ConsumerGroupID:   consumerGroup,
+		DefaultTopicConfig: struct {
+			NumPartitions     int
+			ReplicationFactor int
+		}{NumPartitions: 1, ReplicationFactor: 1},
 	}
 
 	log.Printf("starting adapter")
