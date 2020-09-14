@@ -183,7 +183,7 @@ func (k *Queue) ReaderRegister(topic string) {
 			GroupID:  k.cfg.ConsumerGroupID,
 			Topic:    topic,
 			MinBytes: 10e1,
-			MaxBytes: 10e3,
+			MaxBytes: 10e5,
 		})
 		ch <- r
 		go k.produceMessages(ch, msgChan)
