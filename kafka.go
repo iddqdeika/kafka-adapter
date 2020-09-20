@@ -9,7 +9,8 @@ import (
 	"sync"
 )
 
-var ErrClosed error = fmt.Errorf("kafka adapter is closed")
+var ErrClosed = fmt.Errorf("kafka adapter is closed")
+var ErrAsyncNack = fmt.Errorf("nack is inapplicable in async message acking mode")
 
 func FromStruct(cfg KafkaCfg, logger Logger) (*Queue, error) {
 	return newKafkaQueue(cfg, logger)
@@ -56,6 +57,10 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cant read config: %v", err)
 	}
+	asyncAck, err := cfg.GetInt("KAFKA.ASYNC_ACKS")
+	if err != nil {
+		return nil, fmt.Errorf("cant read config: %v", err)
+	}
 	return newKafkaQueue(KafkaCfg{
 		Concurrency:       concurrency,
 		QueueToReadNames:  strings.Split(queuesToRead, ";"),
@@ -65,6 +70,7 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 		ConsumerGroupID:   consumerGroup,
 		BatchSize:         batchSize,
 		Async:             async == 1,
+		AsyncAck:          asyncAck == 1,
 		DefaultTopicConfig: DefaultTopicConfig{
 			NumPartitions:     pnum,
 			ReplicationFactor: rfactor,
@@ -106,6 +112,15 @@ type KafkaCfg struct {
 	//use it if you dont need delivery guarantee
 	//default is false
 	Async bool
+
+	//enables async acknowledges
+	//
+	//if false(default): kafka reader locks until previous message acked/nacked
+	//
+	//if true: kafka reader can produce multiple messages,
+	//but there is no possibility to provide Nack mechanism,
+	//thats why msg.Nack() will return error
+	AsyncAck bool
 
 	QueueToReadNames  []string
 	QueueToWriteNames []string
@@ -267,9 +282,13 @@ func (k *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 	if k.cfg.ConsumerGroupID == "" {
 		mi.once.Do(mi.returnReader)
 	}
+	// если асинхронное подтверждение, то месседжи подтверждаются в произвольном порядке и удерживать ридер нет смысла.
+	if k.cfg.AsyncAck {
+		mi.once.Do(mi.returnReader)
+	}
 	select {
 	case ch <- &mi:
-		k.logger.Infof("kafka Message emitted from producer")
+		break
 	case <-ctx.Done():
 		err := r.Close()
 		if err != nil {
@@ -438,6 +457,7 @@ type Message struct {
 	reader *kafka.Reader
 	rch    chan *kafka.Reader
 	once   sync.Once
+	async  bool
 }
 
 func (k *Message) Data() []byte {
@@ -460,6 +480,9 @@ func (k *Message) Ack() error {
 }
 
 func (k *Message) Nack() error {
+	if k.async {
+		return ErrAsyncNack
+	}
 	k.once.Do(k.returnNewReader)
 	return nil
 }
