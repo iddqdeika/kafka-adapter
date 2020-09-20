@@ -57,9 +57,9 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cant read config: %v", err)
 	}
-	asyncAck, err := cfg.GetInt("KAFKA.ASYNC_ACKS")
+	asyncAck, err := cfg.GetInt("KAFKA.ASYNC_ACK")
 	if err != nil {
-		return nil, fmt.Errorf("cant read config: %v", err)
+		asyncAck = 0
 	}
 	return newKafkaQueue(KafkaCfg{
 		Concurrency:       concurrency,
