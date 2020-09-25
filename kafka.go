@@ -150,19 +150,19 @@ type Queue struct {
 	m sync.RWMutex
 }
 
-func (k *Queue) init() error {
+func (q *Queue) init() error {
 
-	if k.cfg.Concurrency < 1 {
-		k.cfg.Concurrency = 1
+	if q.cfg.Concurrency < 1 {
+		q.cfg.Concurrency = 1
 	}
 
-	k.readers = make(map[string]chan *kafka.Reader)
-	k.messages = make(map[string]chan *Message)
-	k.writers = make(map[string]*kafka.Writer)
-	k.closed = make(chan struct{})
+	q.readers = make(map[string]chan *kafka.Reader)
+	q.messages = make(map[string]chan *Message)
+	q.writers = make(map[string]*kafka.Writer)
+	q.closed = make(chan struct{})
 
 	//some checkup
-	for _, b := range k.cfg.Brokers {
+	for _, b := range q.cfg.Brokers {
 		conn, err := kafka.Dial("tcp", b)
 		if err != nil {
 			return fmt.Errorf("cant connect to broker %v, err: %v", b, err)
@@ -171,68 +171,68 @@ func (k *Queue) init() error {
 	}
 
 	//fill readers
-	for _, topic := range k.cfg.QueueToReadNames {
-		k.ReaderRegister(topic)
+	for _, topic := range q.cfg.QueueToReadNames {
+		q.ReaderRegister(topic)
 	}
 	//fill writers
-	for _, topic := range k.cfg.QueueToWriteNames {
-		k.WriterRegister(topic)
+	for _, topic := range q.cfg.QueueToWriteNames {
+		q.WriterRegister(topic)
 	}
 	return nil
 }
 
-func (k *Queue) ReaderRegister(topic string) {
-	k.m.Lock()
-	defer k.m.Unlock()
-	if _, ok := k.readers[topic]; ok {
+func (q *Queue) ReaderRegister(topic string) {
+	q.m.Lock()
+	defer q.m.Unlock()
+	if _, ok := q.readers[topic]; ok {
 		return
 	}
 	if topic == "" {
 		return
 	}
-	ch := make(chan *kafka.Reader, k.cfg.Concurrency)
+	ch := make(chan *kafka.Reader, q.cfg.Concurrency)
 	msgChan := make(chan *Message)
-	for i := 0; i < k.cfg.Concurrency; i++ {
+	for i := 0; i < q.cfg.Concurrency; i++ {
 		r := kafka.NewReader(kafka.ReaderConfig{
-			Brokers:  k.cfg.Brokers,
-			GroupID:  k.cfg.ConsumerGroupID,
+			Brokers:  q.cfg.Brokers,
+			GroupID:  q.cfg.ConsumerGroupID,
 			Topic:    topic,
 			MinBytes: 10e1,
 			MaxBytes: 10e5,
 		})
 		ch <- r
-		go k.produceMessages(ch, msgChan)
+		go q.produceMessages(ch, msgChan)
 	}
-	k.readers[topic] = ch
-	k.messages[topic] = msgChan
+	q.readers[topic] = ch
+	q.messages[topic] = msgChan
 }
 
-func (k *Queue) WriterRegister(topic string) {
-	k.m.Lock()
-	defer k.m.Unlock()
-	if _, ok := k.writers[topic]; ok {
+func (q *Queue) WriterRegister(topic string) {
+	q.m.Lock()
+	defer q.m.Unlock()
+	if _, ok := q.writers[topic]; ok {
 		return
 	}
 	if topic == "" {
 		return
 	}
 	w := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:   k.cfg.Brokers,
-		BatchSize: k.cfg.BatchSize,
-		Async:     k.cfg.Async,
+		Brokers:   q.cfg.Brokers,
+		BatchSize: q.cfg.BatchSize,
+		Async:     q.cfg.Async,
 		Topic:     topic,
 		Balancer:  &kafka.LeastBytes{},
 	})
-	k.writers[topic] = w
+	q.writers[topic] = w
 }
 
-func (k *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
+func (q *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
 		select {
-		case <-k.closed:
+		case <-q.closed:
 			cancel()
 		case <-ctx.Done():
 			return
@@ -240,16 +240,16 @@ func (k *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
 	}()
 
 	for {
-		ok := k.producerIteration(ctx, rch, ch)
+		ok := q.producerIteration(ctx, rch, ch)
 		if !ok {
 			return
 		}
 	}
 }
 
-func (k *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, ch chan *Message) bool {
+func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, ch chan *Message) bool {
 	select {
-	case <-k.closed:
+	case <-q.closed:
 		return false
 	default:
 	}
@@ -267,7 +267,7 @@ func (k *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 
 	msg, err := r.FetchMessage(ctx)
 	if err != nil {
-		k.logger.Errorf("error during kafka message fetching: %v", err)
+		q.logger.Errorf("error during kafka message fetching: %v", err)
 		rch <- r
 		return true
 	}
@@ -279,11 +279,11 @@ func (k *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 		rch:    rch,
 	}
 	// если консумергруппа пуста, то месседжи подтверждаются автоматически и удерживать ридер нет смысла.
-	if k.cfg.ConsumerGroupID == "" {
+	if q.cfg.ConsumerGroupID == "" {
 		mi.once.Do(mi.returnReader)
 	}
 	// если асинхронное подтверждение, то месседжи подтверждаются в произвольном порядке и удерживать ридер нет смысла.
-	if k.cfg.AsyncAck {
+	if q.cfg.AsyncAck {
 		mi.once.Do(mi.returnReader)
 	}
 	select {
@@ -292,28 +292,28 @@ func (k *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 	case <-ctx.Done():
 		err := r.Close()
 		if err != nil {
-			k.logger.Errorf("err during reader closing: %v", err)
+			q.logger.Errorf("err during reader closing: %v", err)
 		}
 	}
 	return true
 }
 
-func (k *Queue) Put(queue string, data []byte) error {
+func (q *Queue) Put(queue string, data []byte) error {
 	ctx := context.Background()
-	return k.PutWithCtx(ctx, queue, data)
+	return q.PutWithCtx(ctx, queue, data)
 }
 
-func (k *Queue) PutWithCtx(ctx context.Context, queue string, data []byte) error {
-	return k.PutBatchWithCtx(ctx, queue, data)
+func (q *Queue) PutWithCtx(ctx context.Context, queue string, data []byte) error {
+	return q.PutBatchWithCtx(ctx, queue, data)
 }
 
-func (k *Queue) PutBatch(queue string, data ...[]byte) error {
-	return k.PutBatchWithCtx(context.Background(), queue, data...)
+func (q *Queue) PutBatch(queue string, data ...[]byte) error {
+	return q.PutBatchWithCtx(context.Background(), queue, data...)
 }
 
-func (k *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byte) error {
+func (q *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byte) error {
 	select {
-	case <-k.closed:
+	case <-q.closed:
 		return ErrClosed
 	default:
 
@@ -323,9 +323,9 @@ func (k *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byt
 	for _, d := range data {
 		msgs = append(msgs, kafka.Message{Value: d})
 	}
-	k.m.RLock()
-	defer k.m.RUnlock()
-	if w, ok := k.writers[queue]; ok {
+	q.m.RLock()
+	defer q.m.RUnlock()
+	if w, ok := q.writers[queue]; ok {
 		err := w.WriteMessages(ctx, msgs...)
 		if err != nil {
 			return fmt.Errorf("error during writing Message to kafka: %v", err)
@@ -335,22 +335,22 @@ func (k *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byt
 	return fmt.Errorf("there is no such topic declared in config: %v", queue)
 }
 
-func (k *Queue) Get(queue string) (*Message, error) {
+func (q *Queue) Get(queue string) (*Message, error) {
 	ctx := context.Background()
-	return k.GetWithCtx(ctx, queue)
+	return q.GetWithCtx(ctx, queue)
 }
 
-func (k *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) {
+func (q *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) {
 	select {
-	case <-k.closed:
+	case <-q.closed:
 		return nil, ErrClosed
 	default:
 
 	}
 
-	k.m.RLock()
-	mch, ok := k.messages[queue]
-	k.m.RUnlock()
+	q.m.RLock()
+	mch, ok := q.messages[queue]
+	q.m.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("there is no such topic declared in config: %v", queue)
 	}
@@ -358,24 +358,24 @@ func (k *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) 
 	select {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("context was closed")
-	case <-k.closed:
+	case <-q.closed:
 		return nil, ErrClosed
 	case msg := <-mch:
 		return msg, nil
 	}
 }
 
-func (k *Queue) Close() {
+func (q *Queue) Close() {
 	select {
-	case <-k.closed:
+	case <-q.closed:
 		return
 	default:
-		close(k.closed)
+		close(q.closed)
 	}
 	wg := sync.WaitGroup{}
-	k.m.Lock()
-	defer k.m.Unlock()
-	for _, rchan := range k.readers {
+	q.m.Lock()
+	defer q.m.Unlock()
+	for _, rchan := range q.readers {
 	readers:
 		for {
 			select {
@@ -384,7 +384,7 @@ func (k *Queue) Close() {
 				go func() {
 					err := r.Close()
 					if err != nil {
-						k.logger.Errorf("err during reader closing: %v", err)
+						q.logger.Errorf("err during reader closing: %v", err)
 					}
 					wg.Done()
 				}()
@@ -394,7 +394,7 @@ func (k *Queue) Close() {
 			}
 		}
 	}
-	for _, w := range k.writers {
+	for _, w := range q.writers {
 		go func() {
 			//оставляем это без waitgroup, т.к. в пакете kafka-go баг.
 			//если writemessages закрывается до того, как все результаты внутренних ретраев были считаны
@@ -404,7 +404,7 @@ func (k *Queue) Close() {
 			//а внутренния writer.write блокируется в попытке записать результаты.
 			err := w.Close()
 			if err != nil {
-				k.logger.Errorf("err during writer closing: %v", err)
+				q.logger.Errorf("err during writer closing: %v", err)
 			}
 		}()
 	}
@@ -431,25 +431,26 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 			NumPartitions:     int32(q.cfg.DefaultTopicConfig.NumPartitions),
 			ReplicationFactor: int16(q.cfg.DefaultTopicConfig.ReplicationFactor),
 		}, false)
-
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
 
-	//if q.cfg.ControllerAddress == "" {
-	//	return fmt.Errorf("controller address was not set in cfg")
-	//}
-	//conn, err := kafka.DialContext(ctx, "tcp", q.cfg.ControllerAddress)
-	//if err != nil {
-	//	return err
-	//}
-	//return conn.CreateTopics(kafka.TopicConfig{
-	//	Topic:             topicName,
-	//	NumPartitions:     q.cfg.DefaultTopicConfig.NumPartitions,
-	//	ReplicationFactor: q.cfg.DefaultTopicConfig.ReplicationFactor,
-	//})
+//Returns consumer lag for given topic, if topic previously was registered in adapter by RegisterReader
+//Returns error if context was closed or topic reader wasn't registered yet
+func (q *Queue) GetConsumerLag(ctx context.Context, topicName string) (int64, error) {
+	ch, ok := q.readers[topicName]
+	if !ok {
+		return 0, fmt.Errorf("reader for topic topicName not registered")
+	}
+	select {
+	case <-ctx.Done():
+		return 0, fmt.Errorf("context is closed")
+	case r := <-ch:
+		return r.Lag(), nil
+	}
 }
 
 type Message struct {
