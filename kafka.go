@@ -158,6 +158,7 @@ func (q *Queue) init() error {
 	}
 
 	q.readers = make(map[string]chan *kafka.Reader)
+	q.readerLags = make(map[string]int64)
 	q.messages = make(map[string]chan *Message)
 	q.writers = make(map[string]*kafka.Writer)
 	q.closed = make(chan struct{})
