@@ -139,13 +139,14 @@ type DefaultTopicConfig struct {
 }
 
 type Queue struct {
-	cfg      KafkaCfg
-	logger   Logger
-	c        *kafka.Client
-	readers  map[string]chan *kafka.Reader
-	messages map[string]chan *Message
-	writers  map[string]*kafka.Writer
-	closed   chan struct{}
+	cfg        KafkaCfg
+	logger     Logger
+	c          *kafka.Client
+	readers    map[string]chan *kafka.Reader
+	readerLags map[string]int64
+	messages   map[string]chan *Message
+	writers    map[string]*kafka.Writer
+	closed     chan struct{}
 
 	m sync.RWMutex
 }
@@ -264,7 +265,9 @@ func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 	case <-ctx.Done():
 		return false
 	}
-
+	q.m.Lock()
+	q.readerLags[r.Config().Topic] = r.Lag()
+	q.m.Unlock()
 	msg, err := r.FetchMessage(ctx)
 	if err != nil {
 		q.logger.Errorf("error during kafka message fetching: %v", err)
@@ -441,16 +444,11 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 //Returns consumer lag for given topic, if topic previously was registered in adapter by RegisterReader
 //Returns error if context was closed or topic reader wasn't registered yet
 func (q *Queue) GetConsumerLag(ctx context.Context, topicName string) (int64, error) {
-	ch, ok := q.readers[topicName]
+	lag, ok := q.readerLags[topicName]
 	if !ok {
 		return 0, fmt.Errorf("reader for topic topicName not registered")
 	}
-	select {
-	case <-ctx.Done():
-		return 0, fmt.Errorf("context is closed")
-	case r := <-ch:
-		return r.Lag(), nil
-	}
+	return lag, nil
 }
 
 type Message struct {
