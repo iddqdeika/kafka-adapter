@@ -273,15 +273,18 @@ func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 		rch <- r
 		return true
 	}
-	q.m.Lock()
-	q.readerOffsets[r.Config().Topic] = msg.Offset
-	q.m.Unlock()
+
 	// суть в том, что ридер вернется в канал ридеров только при ack/nack, не раньше.
 	// следующее сообщение с ридера читать нельзя, пока не будет ack/nack на предыдущем.
 	mi := Message{
 		msg:    &msg,
 		reader: r,
 		rch:    rch,
+		actualizeOffset: func(o int64) {
+			q.m.Lock()
+			q.readerOffsets[r.Config().Topic] = o
+			q.m.Unlock()
+		},
 	}
 	// если консумергруппа пуста, то месседжи подтверждаются автоматически и удерживать ридер нет смысла.
 	if q.cfg.ConsumerGroupID == "" {
@@ -464,11 +467,12 @@ func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName 
 }
 
 type Message struct {
-	msg    *kafka.Message
-	reader *kafka.Reader
-	rch    chan *kafka.Reader
-	once   sync.Once
-	async  bool
+	msg             *kafka.Message
+	reader          *kafka.Reader
+	rch             chan *kafka.Reader
+	once            sync.Once
+	async           bool
+	actualizeOffset func(o int64)
 }
 
 func (k *Message) Data() []byte {
@@ -486,6 +490,7 @@ func (k *Message) returnNewReader() {
 
 func (k *Message) Ack() error {
 	err := k.reader.CommitMessages(context.Background(), *k.msg)
+	k.actualizeOffset(k.msg.Offset)
 	k.once.Do(k.returnReader)
 	return err
 }
