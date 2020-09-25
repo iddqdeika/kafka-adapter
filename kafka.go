@@ -266,9 +266,6 @@ func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 	case <-ctx.Done():
 		return false
 	}
-	q.m.Lock()
-	q.readerOffsets[r.Config().Topic] = r.Offset()
-	q.m.Unlock()
 
 	msg, err := r.FetchMessage(ctx)
 	if err != nil {
@@ -276,6 +273,9 @@ func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 		rch <- r
 		return true
 	}
+	q.m.Lock()
+	q.readerOffsets[r.Config().Topic] = msg.Offset
+	q.m.Unlock()
 	// суть в том, что ридер вернется в канал ридеров только при ack/nack, не раньше.
 	// следующее сообщение с ридера читать нельзя, пока не будет ack/nack на предыдущем.
 	mi := Message{
@@ -458,7 +458,7 @@ func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName 
 	}
 	lag, ok := q.readerOffsets[topicName]
 	if !ok {
-		return 0, fmt.Errorf("reader for topic topicName not registered")
+		return 0, fmt.Errorf("has no last msg offset info for topic %v", topicName)
 	}
 	return newest - lag, nil
 }
