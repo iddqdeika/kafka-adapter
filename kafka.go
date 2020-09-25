@@ -139,14 +139,14 @@ type DefaultTopicConfig struct {
 }
 
 type Queue struct {
-	cfg        KafkaCfg
-	logger     Logger
-	c          *kafka.Client
-	readers    map[string]chan *kafka.Reader
-	readerLags map[string]int64
-	messages   map[string]chan *Message
-	writers    map[string]*kafka.Writer
-	closed     chan struct{}
+	cfg           KafkaCfg
+	logger        Logger
+	c             *kafka.Client
+	readers       map[string]chan *kafka.Reader
+	readerOffsets map[string]int64
+	messages      map[string]chan *Message
+	writers       map[string]*kafka.Writer
+	closed        chan struct{}
 
 	m sync.RWMutex
 }
@@ -158,7 +158,7 @@ func (q *Queue) init() error {
 	}
 
 	q.readers = make(map[string]chan *kafka.Reader)
-	q.readerLags = make(map[string]int64)
+	q.readerOffsets = make(map[string]int64)
 	q.messages = make(map[string]chan *Message)
 	q.writers = make(map[string]*kafka.Writer)
 	q.closed = make(chan struct{})
@@ -267,8 +267,9 @@ func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 		return false
 	}
 	q.m.Lock()
-	q.readerLags[r.Config().Topic] = r.Lag()
+	q.readerOffsets[r.Config().Topic] = r.Offset()
 	q.m.Unlock()
+
 	msg, err := r.FetchMessage(ctx)
 	if err != nil {
 		q.logger.Errorf("error during kafka message fetching: %v", err)
@@ -444,12 +445,22 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 
 //Returns consumer lag for given topic, if topic previously was registered in adapter by RegisterReader
 //Returns error if context was closed or topic reader wasn't registered yet
-func (q *Queue) GetConsumerLag(ctx context.Context, topicName string) (int64, error) {
-	lag, ok := q.readerLags[topicName]
+func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName string) (int64, error) {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V2_3_0_0
+	a, err := sarama.NewClient(q.cfg.Brokers, cfg)
+	if err != nil {
+		return 0, err
+	}
+	newest, err := a.GetOffset(topicName, 0, sarama.OffsetNewest)
+	if err != nil {
+		return 0, err
+	}
+	lag, ok := q.readerOffsets[topicName]
 	if !ok {
 		return 0, fmt.Errorf("reader for topic topicName not registered")
 	}
-	return lag, nil
+	return newest - lag, nil
 }
 
 type Message struct {
