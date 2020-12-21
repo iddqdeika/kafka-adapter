@@ -86,5 +86,7 @@ import (
 
 ### Additional:
 FromConfig(cfg Config, logger Logger) - constructor, which uses interface Config
+
 LoadJsonConfig(filename string) - Config implementation, loading data from json file
+
 DefaultLogger - default implementation of logger, just forwards all errors to fmt.Pringf method
