@@ -455,6 +455,7 @@ func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName 
 	if err != nil {
 		return 0, err
 	}
+	defer a.Close()
 	newest, err := a.GetOffset(topicName, 0, sarama.OffsetNewest)
 	if err != nil {
 		return 0, err
