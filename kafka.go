@@ -12,6 +12,10 @@ import (
 var ErrClosed = fmt.Errorf("kafka adapter is closed")
 var ErrAsyncNack = fmt.Errorf("nack is inapplicable in async message acking mode")
 
+const (
+	writerChanSize = 100
+)
+
 func FromStruct(cfg KafkaCfg, logger Logger) (*Queue, error) {
 	return newKafkaQueue(cfg, logger)
 }
@@ -95,6 +99,7 @@ func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
 }
 
 type KafkaCfg struct {
+	//used for concurrent read support
 	//due to kafka internal structure we need to create at least one
 	//consumer in consumer group for each topic partition.
 	//that's why concurrency must be set to equal or higher value than
@@ -145,7 +150,7 @@ type Queue struct {
 	readers       map[string]chan *kafka.Reader
 	readerOffsets map[string]int64
 	messages      map[string]chan *Message
-	writers       map[string]*kafka.Writer
+	writers       map[string]chan *kafka.Writer
 	closed        chan struct{}
 
 	m sync.RWMutex
@@ -160,7 +165,7 @@ func (q *Queue) init() error {
 	q.readers = make(map[string]chan *kafka.Reader)
 	q.readerOffsets = make(map[string]int64)
 	q.messages = make(map[string]chan *Message)
-	q.writers = make(map[string]*kafka.Writer)
+	q.writers = make(map[string]chan *kafka.Writer)
 	q.closed = make(chan struct{})
 
 	//some checkup
@@ -212,11 +217,11 @@ func (q *Queue) ReaderRegister(topic string) {
 func (q *Queue) WriterRegister(topic string) {
 	q.m.Lock()
 	defer q.m.Unlock()
-	if _, ok := q.writers[topic]; ok {
-		return
-	}
 	if topic == "" {
 		return
+	}
+	if _, ok := q.writers[topic]; !ok {
+		q.writers[topic] = make(chan *kafka.Writer, writerChanSize)
 	}
 	w := kafka.NewWriter(kafka.WriterConfig{
 		Brokers:   q.cfg.Brokers,
@@ -225,7 +230,13 @@ func (q *Queue) WriterRegister(topic string) {
 		Topic:     topic,
 		Balancer:  &kafka.LeastBytes{},
 	})
-	q.writers[topic] = w
+	q.writers[topic] <- w
+}
+
+func (q *Queue) WritersRegister(topic string, concurrency int) {
+	for i := 0; i < concurrency; i++ {
+		q.WriterRegister(topic)
+	}
 }
 
 func (q *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
@@ -332,8 +343,11 @@ func (q *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byt
 		msgs = append(msgs, kafka.Message{Value: d})
 	}
 	q.m.RLock()
-	defer q.m.RUnlock()
-	if w, ok := q.writers[queue]; ok {
+	wch, ok := q.writers[queue]
+	q.m.RUnlock()
+	if ok {
+		w := <-wch
+		wch <- w
 		err := w.WriteMessages(ctx, msgs...)
 		if err != nil {
 			return fmt.Errorf("error during writing Message to kafka: %v", err)
@@ -402,18 +416,21 @@ func (q *Queue) Close() {
 			}
 		}
 	}
-	for _, w := range q.writers {
+	for _, wch := range q.writers {
 		go func() {
 			//оставляем это без waitgroup, т.к. в пакете kafka-go баг.
 			//если writemessages закрывается до того, как все результаты внутренних ретраев были считаны
 			//например, при закрытии контекста
 			//то врайтер повисает в воздухе:
 			//writemessages не читает результаты из внутреннего writer
-			//а внутренния writer.write блокируется в попытке записать результаты.
-			err := w.Close()
-			if err != nil {
-				q.logger.Errorf("err during writer closing: %v", err)
+			//а внутренний writer.write блокируется в попытке записать результаты.
+			for w := range wch {
+				err := w.Close()
+				if err != nil {
+					q.logger.Errorf("err during writer closing: %v", err)
+				}
 			}
+
 		}()
 	}
 	wg.Wait()
