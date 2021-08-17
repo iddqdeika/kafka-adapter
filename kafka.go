@@ -224,12 +224,11 @@ func (q *Queue) WriterRegister(topic string) {
 		q.writers[topic] = make(chan *kafka.Writer, writerChanSize)
 	}
 	w := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:     q.cfg.Brokers,
-		BatchSize:   q.cfg.BatchSize,
-		Async:       q.cfg.Async,
-		Topic:       topic,
-		Balancer:    &kafka.LeastBytes{},
-		MaxAttempts: 1,
+		Brokers:   q.cfg.Brokers,
+		BatchSize: q.cfg.BatchSize,
+		Async:     q.cfg.Async,
+		Topic:     topic,
+		Balancer:  &kafka.LeastBytes{},
 	})
 	q.writers[topic] <- w
 }
