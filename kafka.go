@@ -147,6 +147,7 @@ type Queue struct {
 	cfg           KafkaCfg
 	logger        Logger
 	c             *kafka.Client
+	srm           sarama.Client
 	readers       map[string]chan *kafka.Reader
 	readerOffsets map[string]int64
 	messages      map[string]chan *Message
@@ -176,6 +177,14 @@ func (q *Queue) init() error {
 		}
 		conn.Close()
 	}
+	//sarama
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V2_3_0_0
+	srm, err := sarama.NewClient(q.cfg.Brokers, cfg)
+	if err != nil {
+		return fmt.Errorf("cant create sarama kafka client: %v", err)
+	}
+	q.srm = srm
 
 	//fill readers
 	for _, topic := range q.cfg.QueueToReadNames {
@@ -397,6 +406,7 @@ func (q *Queue) Close() {
 	wg := sync.WaitGroup{}
 	q.m.Lock()
 	defer q.m.Unlock()
+	q.srm.Close()
 	for _, rchan := range q.readers {
 	readers:
 		for {
@@ -466,14 +476,7 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 //Returns consumer lag for given topic, if topic previously was registered in adapter by RegisterReader
 //Returns error if context was closed or topic reader wasn't registered yet
 func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName string) (int64, error) {
-	cfg := sarama.NewConfig()
-	cfg.Version = sarama.V2_3_0_0
-	a, err := sarama.NewClient(q.cfg.Brokers, cfg)
-	if err != nil {
-		return 0, err
-	}
-	defer a.Close()
-	newest, err := a.GetOffset(topicName, 0, sarama.OffsetNewest)
+	newest, err := q.srm.GetOffset(topicName, 0, sarama.OffsetNewest)
 	if err != nil {
 		return 0, err
 	}
