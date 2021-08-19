@@ -484,7 +484,7 @@ func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName 
 	if !ok {
 		return 0, fmt.Errorf("has no last msg offset info for topic %v", topicName)
 	}
-	return newest - lag, nil
+	return newest - lag - 1, nil
 }
 
 type Message struct {
