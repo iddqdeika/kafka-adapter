@@ -7,6 +7,7 @@ import (
 	kafka "github.com/segmentio/kafka-go"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 var ErrClosed = fmt.Errorf("kafka adapter is closed")
@@ -149,7 +150,7 @@ type Queue struct {
 	c             *kafka.Client
 	srm           sarama.Client
 	readers       map[string]chan *kafka.Reader
-	readerOffsets map[string]int64
+	readerOffsets map[string]*int64
 	messages      map[string]chan *Message
 	writers       map[string]chan *kafka.Writer
 	closed        chan struct{}
@@ -164,7 +165,7 @@ func (q *Queue) init() error {
 	}
 
 	q.readers = make(map[string]chan *kafka.Reader)
-	q.readerOffsets = make(map[string]int64)
+	q.readerOffsets = make(map[string]*int64)
 	q.messages = make(map[string]chan *Message)
 	q.writers = make(map[string]chan *kafka.Writer)
 	q.closed = make(chan struct{})
@@ -301,9 +302,7 @@ func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 		reader: r,
 		rch:    rch,
 		actualizeOffset: func(o int64) {
-			q.m.Lock()
-			q.readerOffsets[r.Config().Topic] = o
-			q.m.Unlock()
+			atomic.StoreInt64(q.readerOffsets[r.Config().Topic], o)
 		},
 	}
 	// если консумергруппа пуста, то месседжи подтверждаются автоматически и удерживать ридер нет смысла.
@@ -480,10 +479,7 @@ func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName 
 	if err != nil {
 		return 0, err
 	}
-	lag, ok := q.readerOffsets[topicName]
-	if !ok {
-		return 0, fmt.Errorf("has no last msg offset info for topic %v", topicName)
-	}
+	lag := atomic.LoadInt64(q.readerOffsets[topicName])
 	return newest - lag - 1, nil
 }
 
