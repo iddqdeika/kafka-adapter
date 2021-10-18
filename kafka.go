@@ -151,9 +151,11 @@ type Queue struct {
 	srm           sarama.Client
 	readers       map[string]chan *kafka.Reader
 	readerOffsets map[string]*int64
-	messages      map[string]chan *Message
-	writers       map[string]chan *kafka.Writer
-	closed        chan struct{}
+	offsetLock    sync.RWMutex
+
+	messages map[string]chan *Message
+	writers  map[string]chan *kafka.Writer
+	closed   chan struct{}
 
 	m sync.RWMutex
 }
@@ -207,6 +209,10 @@ func (q *Queue) ReaderRegister(topic string) {
 	if topic == "" {
 		return
 	}
+	q.offsetLock.Lock()
+	var offset int64
+	q.readerOffsets[topic] = &offset
+	q.offsetLock.Unlock()
 	ch := make(chan *kafka.Reader, q.cfg.Concurrency)
 	msgChan := make(chan *Message)
 	for i := 0; i < q.cfg.Concurrency; i++ {
@@ -479,7 +485,13 @@ func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName 
 	if err != nil {
 		return 0, err
 	}
-	lag := atomic.LoadInt64(q.readerOffsets[topicName])
+	q.offsetLock.RLock()
+	defer q.offsetLock.RUnlock()
+	val, ok := q.readerOffsets[topicName]
+	if !ok {
+		return -1, nil
+	}
+	lag := atomic.LoadInt64(val)
 	return newest - lag - 1, nil
 }
 
