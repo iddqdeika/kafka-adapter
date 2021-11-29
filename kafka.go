@@ -393,7 +393,7 @@ func (q *Queue) GetWithCtx(ctx context.Context, queue string) (*Message, error) 
 
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("context was closed")
+		return nil, context.Canceled
 	case <-q.closed:
 		return nil, ErrClosed
 	case msg := <-mch:
