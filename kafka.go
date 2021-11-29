@@ -76,7 +76,7 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 		BatchSize:         batchSize,
 		Async:             async == 1,
 		AsyncAck:          asyncAck == 1,
-		DefaultTopicConfig: DefaultTopicConfig{
+		DefaultTopicConfig: TopicConfig{
 			NumPartitions:     pnum,
 			ReplicationFactor: rfactor,
 		},
@@ -85,7 +85,7 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 
 func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
 	if cfg.DefaultTopicConfig.NumPartitions < 1 {
-		return nil, fmt.Errorf("incorrect DefaultTopicConfig, numpartitions must be more than 1")
+		return nil, fmt.Errorf("incorrect TopicConfig, numpartitions must be more than 1")
 	}
 
 	q := &Queue{
@@ -136,10 +136,10 @@ type KafkaCfg struct {
 
 	ConsumerGroupID string
 
-	DefaultTopicConfig DefaultTopicConfig
+	DefaultTopicConfig TopicConfig
 }
 
-type DefaultTopicConfig struct {
+type TopicConfig struct {
 	NumPartitions     int
 	ReplicationFactor int
 }
@@ -476,6 +476,17 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 		}
 	}
 	return nil
+}
+
+func (q *Queue) SetTopicConfig(topic string, entries map[string]*string) error {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V2_3_0_0
+	a, err := sarama.NewClusterAdmin(q.cfg.Brokers, cfg)
+	if err != nil {
+		panic(err)
+	}
+	defer a.Close()
+	return a.AlterConfig(sarama.TopicResource, topic, entries, false)
 }
 
 //Returns consumer lag for given topic, if topic previously was registered in adapter by RegisterReader
