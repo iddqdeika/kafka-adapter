@@ -5,6 +5,7 @@ import (
 	"fmt"
 	sarama "github.com/Shopify/sarama"
 	kafka "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/snappy"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,6 +67,8 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 	if err != nil {
 		asyncAck = 0
 	}
+	codec, _ := cfg.GetString("KAFKA.COMPRESSION_CODEC")
+
 	return newKafkaQueue(KafkaCfg{
 		Concurrency:       concurrency,
 		QueueToReadNames:  strings.Split(queuesToRead, ";"),
@@ -80,6 +83,7 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 			NumPartitions:     pnum,
 			ReplicationFactor: rfactor,
 		},
+		CompressionCodec: codec,
 	}, logger)
 }
 
@@ -136,6 +140,7 @@ type KafkaCfg struct {
 
 	ConsumerGroupID string
 
+	CompressionCodec   string
 	DefaultTopicConfig TopicConfig
 }
 
@@ -239,12 +244,20 @@ func (q *Queue) WriterRegister(topic string) {
 	if _, ok := q.writers[topic]; !ok {
 		q.writers[topic] = make(chan *kafka.Writer, writerChanSize)
 	}
+	var codec kafka.CompressionCodec
+	switch q.cfg.CompressionCodec {
+	case "snappy":
+		codec = snappy.NewCompressionCodec()
+	default:
+		codec = nil
+	}
 	w := kafka.NewWriter(kafka.WriterConfig{
-		Brokers:   q.cfg.Brokers,
-		BatchSize: q.cfg.BatchSize,
-		Async:     q.cfg.Async,
-		Topic:     topic,
-		Balancer:  &kafka.LeastBytes{},
+		Brokers:          q.cfg.Brokers,
+		BatchSize:        q.cfg.BatchSize,
+		Async:            q.cfg.Async,
+		Topic:            topic,
+		Balancer:         &kafka.LeastBytes{},
+		CompressionCodec: codec,
 	})
 	q.writers[topic] <- w
 }
