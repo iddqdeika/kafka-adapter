@@ -483,10 +483,29 @@ func (q *Queue) SetTopicConfig(topic string, entries map[string]*string) error {
 	cfg.Version = sarama.V2_3_0_0
 	a, err := sarama.NewClusterAdmin(q.cfg.Brokers, cfg)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer a.Close()
-	return a.AlterConfig(sarama.TopicResource, topic, entries, false)
+	err = a.AlterConfig(sarama.TopicResource, topic, entries, false)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for name, _ := range entries {
+		names = append(names, name)
+	}
+	res, err := a.DescribeConfig(sarama.ConfigResource{
+		Type:        sarama.TopicResource,
+		Name:        topic,
+		ConfigNames: names,
+	})
+	if err != nil {
+		return err
+	}
+	for _, cfg := range res {
+		q.logger.Infof("for topic %v config %v has value %v", topic, cfg.Name, cfg.Value)
+	}
+	return nil
 }
 
 //Returns consumer lag for given topic, if topic previously was registered in adapter by RegisterReader
