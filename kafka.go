@@ -144,9 +144,13 @@ type KafkaCfg struct {
 	DefaultTopicConfig TopicConfig
 }
 
-type TopicConfig struct {
-	NumPartitions     int
-	ReplicationFactor int
+type TopicConfig kafka.TopicConfig
+
+func (c TopicConfig) WithSetting(name, value string) {
+	c.ConfigEntries = append(c.ConfigEntries, kafka.ConfigEntry{
+		ConfigName:  name,
+		ConfigValue: value,
+	})
 }
 
 type Queue struct {
@@ -384,6 +388,40 @@ func (q *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byt
 	return fmt.Errorf("there is no such topic declared in config: %v", queue)
 }
 
+// KV - пара ключ-значение, которые можно использовать в качестве данных сообщения kafka
+// ключ может быть пустым, но надо учитывать, что в топиках с компакцией по ключу, а не по дате, в таком случае
+type KV struct {
+	Key   []byte
+	Value []byte
+}
+
+func (q *Queue) PutKVBatchWithCtx(ctx context.Context, queue string, kvs ...KV) error {
+	select {
+	case <-q.closed:
+		return ErrClosed
+	default:
+
+	}
+
+	msgs := make([]kafka.Message, 0)
+	for _, kv := range kvs {
+		msgs = append(msgs, kafka.Message{Key: kv.Key, Value: kv.Value})
+	}
+	q.m.RLock()
+	wch, ok := q.writers[queue]
+	q.m.RUnlock()
+	if ok {
+		w := <-wch
+		wch <- w
+		err := w.WriteMessages(ctx, msgs...)
+		if err != nil {
+			return fmt.Errorf("error during writing Message to kafka: %v", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("there is no such topic declared in config: %v", queue)
+}
+
 func (q *Queue) Get(queue string) (*Message, error) {
 	ctx := context.Background()
 	return q.GetWithCtx(ctx, queue)
@@ -479,7 +517,11 @@ func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error 
 	}
 	defer a.Close()
 	topics, err := a.ListTopics()
-	if _, ok := topics[topicName]; !ok {
+	if err != nil {
+		return err
+	}
+	_, ok := topics[topicName]
+	if !ok {
 		err = a.CreateTopic(topicName, &sarama.TopicDetail{
 			NumPartitions:     int32(q.cfg.DefaultTopicConfig.NumPartitions),
 			ReplicationFactor: int16(q.cfg.DefaultTopicConfig.ReplicationFactor),
@@ -516,7 +558,7 @@ func (q *Queue) SetTopicConfig(topic string, entries map[string]*string) error {
 		return err
 	}
 	for _, cfg := range res {
-		q.logger.Infof("for topic %v config %v has value %v", topic, cfg.Name, cfg.Value)
+		q.logger.Infof("for topic %v setting %v updated and has value %v", topic, cfg.Name, cfg.Value)
 	}
 	return nil
 }
