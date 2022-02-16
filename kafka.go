@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 var ErrClosed = fmt.Errorf("kafka adapter is closed")
@@ -234,6 +235,9 @@ func (q *Queue) ReaderRegister(topic string) {
 			Topic:    topic,
 			MinBytes: 10e1,
 			MaxBytes: 10e5,
+		}
+		if q.cfg.AsyncAck {
+			cfg.CommitInterval = time.Second
 		}
 		r := kafka.NewReader(cfg)
 		if contains(topic, q.cfg.ResetOffsetForTopics) {
