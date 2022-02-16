@@ -235,10 +235,10 @@ func (q *Queue) ReaderRegister(topic string) {
 			MinBytes: 10e1,
 			MaxBytes: 10e5,
 		}
-		if contains(topic, q.cfg.ResetOffsetForTopics) {
-			cfg.StartOffset = 0
-		}
 		r := kafka.NewReader(cfg)
+		if contains(topic, q.cfg.ResetOffsetForTopics) {
+			r.SetOffset(kafka.FirstOffset)
+		}
 		ch <- r
 		go q.produceMessages(ch, msgChan)
 	}
