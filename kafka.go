@@ -68,17 +68,19 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 		asyncAck = 0
 	}
 	codec, _ := cfg.GetString("KAFKA.COMPRESSION_CODEC")
+	resetOffsetForTopics, _ := cfg.GetString("KAFKA.RESET_OFFSET_FOR_TOPICS")
 
 	return newKafkaQueue(KafkaCfg{
-		Concurrency:       concurrency,
-		QueueToReadNames:  strings.Split(queuesToRead, ";"),
-		QueueToWriteNames: strings.Split(queuesToWrite, ";"),
-		Brokers:           strings.Split(brokers, ";"),
-		ControllerAddress: controller,
-		ConsumerGroupID:   consumerGroup,
-		BatchSize:         batchSize,
-		Async:             async == 1,
-		AsyncAck:          asyncAck == 1,
+		Concurrency:          concurrency,
+		QueueToReadNames:     strings.Split(queuesToRead, ";"),
+		QueueToWriteNames:    strings.Split(queuesToWrite, ";"),
+		ResetOffsetForTopics: strings.Split(resetOffsetForTopics, ";"),
+		Brokers:              strings.Split(brokers, ";"),
+		ControllerAddress:    controller,
+		ConsumerGroupID:      consumerGroup,
+		BatchSize:            batchSize,
+		Async:                async == 1,
+		AsyncAck:             asyncAck == 1,
 		DefaultTopicConfig: TopicConfig{
 			NumPartitions:     pnum,
 			ReplicationFactor: rfactor,
@@ -132,8 +134,9 @@ type KafkaCfg struct {
 	//thats why msg.Nack() will return error
 	AsyncAck bool
 
-	QueueToReadNames  []string
-	QueueToWriteNames []string
+	QueueToReadNames     []string
+	QueueToWriteNames    []string
+	ResetOffsetForTopics []string
 
 	Brokers           []string
 	ControllerAddress string
@@ -225,18 +228,31 @@ func (q *Queue) ReaderRegister(topic string) {
 	ch := make(chan *kafka.Reader, q.cfg.Concurrency)
 	msgChan := make(chan *Message)
 	for i := 0; i < q.cfg.Concurrency; i++ {
-		r := kafka.NewReader(kafka.ReaderConfig{
+		cfg := kafka.ReaderConfig{
 			Brokers:  q.cfg.Brokers,
 			GroupID:  q.cfg.ConsumerGroupID,
 			Topic:    topic,
 			MinBytes: 10e1,
 			MaxBytes: 10e5,
-		})
+		}
+		if contains(topic, q.cfg.ResetOffsetForTopics) {
+			cfg.StartOffset = 0
+		}
+		r := kafka.NewReader(cfg)
 		ch <- r
 		go q.produceMessages(ch, msgChan)
 	}
 	q.readers[topic] = ch
 	q.messages[topic] = msgChan
+}
+
+func contains(s string, arr []string) bool {
+	for _, v := range arr {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func (q *Queue) WriterRegister(topic string) {
