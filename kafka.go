@@ -643,12 +643,12 @@ func (k *Message) returnNewReader() {
 }
 
 func (k *Message) Ack() error {
+	k.actualizeOffset(k.msg.Offset)
+	k.once.Do(k.returnReader)
 	if !k.needack {
 		return nil
 	}
 	err := k.reader.CommitMessages(context.Background(), *k.msg)
-	k.actualizeOffset(k.msg.Offset)
-	k.once.Do(k.returnReader)
 	return err
 }
 
