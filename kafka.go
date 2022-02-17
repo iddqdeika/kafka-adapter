@@ -292,8 +292,8 @@ func (q *Queue) WritersRegister(topic string, concurrency int) {
 	}
 }
 
-func (q *Queue) CleanupOffsets(group string, topic string, partitions int) error {
-	of, err := sarama.NewOffsetManagerFromClient(group, q.srm)
+func (q *Queue) CleanupOffsets(topic string, partitions int) error {
+	of, err := sarama.NewOffsetManagerFromClient(q.cfg.ConsumerGroupID, q.srm)
 	if err != nil {
 		return err
 	}
