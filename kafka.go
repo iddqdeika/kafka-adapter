@@ -359,9 +359,10 @@ func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 	// суть в том, что ридер вернется в канал ридеров только при ack/nack, не раньше.
 	// следующее сообщение с ридера читать нельзя, пока не будет ack/nack на предыдущем.
 	mi := Message{
-		msg:    &msg,
-		reader: r,
-		rch:    rch,
+		msg:     &msg,
+		reader:  r,
+		rch:     rch,
+		needack: q.cfg.ConsumerGroupID != "",
 		actualizeOffset: func(o int64) {
 			atomic.StoreInt64(q.readerOffsets[r.Config().Topic], o)
 		},
@@ -371,7 +372,7 @@ func (q *Queue) producerIteration(ctx context.Context, rch chan *kafka.Reader, c
 		mi.once.Do(mi.returnReader)
 	}
 	// если асинхронное подтверждение, то месседжи подтверждаются в произвольном порядке и удерживать ридер нет смысла.
-	if q.cfg.AsyncAck {
+	if q.cfg.AsyncAck && q.cfg.ConsumerGroupID != "" {
 		mi.once.Do(mi.returnReader)
 	}
 	select {
@@ -624,6 +625,7 @@ type Message struct {
 	rch             chan *kafka.Reader
 	once            sync.Once
 	async           bool
+	needack         bool
 	actualizeOffset func(o int64)
 }
 
