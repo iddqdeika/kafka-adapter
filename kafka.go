@@ -292,6 +292,23 @@ func (q *Queue) WritersRegister(topic string, concurrency int) {
 	}
 }
 
+func (q *Queue) CleanupOffsets(group string, topic string, partitions int) error {
+	of, err := sarama.NewOffsetManagerFromClient(group, q.srm)
+	if err != nil {
+		return err
+	}
+	defer of.Close()
+	for i := 0; i < partitions; i++ {
+		p, err := of.ManagePartition(topic, int32(i+1))
+		if err != nil {
+			return err
+		}
+		p.ResetOffset(0, "modified by kafka-adapter")
+		p.Close()
+	}
+	return nil
+}
+
 func (q *Queue) produceMessages(rch chan *kafka.Reader, ch chan *Message) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
