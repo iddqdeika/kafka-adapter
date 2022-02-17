@@ -299,10 +299,11 @@ func (q *Queue) CleanupOffsets(topic string, partitions int) error {
 	}
 	defer of.Close()
 	for i := 0; i < partitions; i++ {
-		p, err := of.ManagePartition(topic, int32(i+1))
+		p, err := of.ManagePartition(topic, int32(i))
 		if err != nil {
 			return err
 		}
+		p.MarkOffset(0, "modified by kafka-adapter")
 		p.ResetOffset(0, "modified by kafka-adapter")
 		p.Close()
 	}
