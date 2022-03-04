@@ -633,6 +633,10 @@ func (k *Message) Data() []byte {
 	return k.msg.Value
 }
 
+func (k *Message) Offset() int64 {
+	return k.msg.Offset
+}
+
 func (k *Message) returnReader() {
 	k.rch <- k.reader
 }
