@@ -278,6 +278,7 @@ func (q *Queue) WriterRegister(topic string) {
 	w := kafka.NewWriter(kafka.WriterConfig{
 		Brokers:          q.cfg.Brokers,
 		BatchSize:        q.cfg.BatchSize,
+		BatchTimeout:     time.Millisecond * 200,
 		Async:            q.cfg.Async,
 		Topic:            topic,
 		Balancer:         &kafka.LeastBytes{},
