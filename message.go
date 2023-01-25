@@ -20,6 +20,13 @@ func (k *Message) Data() []byte {
 	return k.msg.Value
 }
 
+func (k *Message) KVData() *KV {
+	return &KV{
+		Key:   k.msg.Value,
+		Value: k.msg.Key,
+	}
+}
+
 func (k *Message) Offset() int64 {
 	return k.msg.Offset
 }
