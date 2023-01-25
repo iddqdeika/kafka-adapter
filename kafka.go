@@ -91,9 +91,7 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 }
 
 func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
-	if cfg.DefaultTopicConfig.NumPartitions < 1 {
-		return nil, fmt.Errorf("incorrect TopicConfig, numpartitions must be more than 1")
-	}
+	fixDefaultTopicConfig(&cfg.DefaultTopicConfig, logger)
 
 	q := &Queue{
 		cfg:    cfg,
@@ -104,6 +102,17 @@ func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
 		return nil, fmt.Errorf("error during kafka init: %v", err)
 	}
 	return q, nil
+}
+
+func fixDefaultTopicConfig(cfg *TopicConfig, logger Logger) {
+	if cfg.NumPartitions < 1 {
+		logger.Errorf("DefaultTopicConfig.NumPartitions is %v. setting to 1 instead", cfg.NumPartitions)
+		cfg.NumPartitions = 1
+	}
+	if cfg.ReplicationFactor < 1 {
+		logger.Errorf("DefaultTopicConfig.ReplicationFactor is %v. setting to 1 instead", cfg.NumPartitions)
+		cfg.ReplicationFactor = 1
+	}
 }
 
 type KafkaCfg struct {
@@ -121,8 +130,8 @@ type KafkaCfg struct {
 
 	//enables async mode
 	//in async mode writer will not wait acquirement of successfull write operation
-	//thats why Put method will not return any error and will not be blocked
-	//use it if you dont need delivery guarantee
+	//that's why Put method will not return any error and will not be blocked
+	//use it if you don't need delivery guarantee
 	//default is false
 	Async bool
 
@@ -135,8 +144,13 @@ type KafkaCfg struct {
 	//thats why msg.Nack() will return error
 	AsyncAck bool
 
-	QueueToReadNames     []string
-	QueueToWriteNames    []string
+	QueueToReadNames  []string
+	QueueToWriteNames []string
+
+	//topics for which we need to reset offset before reading.
+	//for example, we need to start read some topic 'articles' from the beginning
+	//in this case we need to append string "articles" to this array
+	//when Adapter registers writer for this topic - consumer's offset will reset to the beginning.
 	ResetOffsetForTopics []string
 
 	Brokers           []string
@@ -240,7 +254,7 @@ func (q *Queue) ReaderRegister(topic string) {
 			cfg.CommitInterval = time.Second
 		}
 		r := kafka.NewReader(cfg)
-		if contains(topic, q.cfg.ResetOffsetForTopics) {
+		if contains(q.cfg.ResetOffsetForTopics, topic) {
 			r.SetOffset(kafka.FirstOffset)
 		}
 		ch <- r
@@ -250,7 +264,7 @@ func (q *Queue) ReaderRegister(topic string) {
 	q.messages[topic] = msgChan
 }
 
-func contains(s string, arr []string) bool {
+func contains(arr []string, s string) bool {
 	for _, v := range arr {
 		if v == s {
 			return true
@@ -428,8 +442,8 @@ func (q *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byt
 	return fmt.Errorf("there is no such topic declared in config: %v", queue)
 }
 
-// KV - пара ключ-значение, которые можно использовать в качестве данных сообщения kafka
-// ключ может быть пустым, но надо учитывать, что в топиках с компакцией по ключу, а не по дате, в таком случае
+// KV - key-value pair, which can be used as data for kafka message
+// key can be empty, but in topics with compaction enabled all empty keys will be compacted as the same
 type KV struct {
 	Key   []byte
 	Value []byte
@@ -542,12 +556,12 @@ func (q *Queue) Close() {
 	wg.Wait()
 }
 
-//Ensures that topic with given name was created with background context set
+//EnsureTopic Ensures that topic with given name was created with background context set
 func (q *Queue) EnsureTopic(topicName string) error {
 	return q.EnsureTopicWithCtx(context.Background(), topicName)
 }
 
-//Ensures that topic with given name was created
+//EnsureTopicWithCtx ensures that topic with given name was created
 func (q *Queue) EnsureTopicWithCtx(ctx context.Context, topicName string) error {
 	cfg := sarama.NewConfig()
 	cfg.Version = sarama.V2_3_0_0
@@ -618,49 +632,4 @@ func (q *Queue) GetConsumerLagForSinglePartition(ctx context.Context, topicName 
 	}
 	lag := atomic.LoadInt64(val)
 	return newest - lag - 1, nil
-}
-
-type Message struct {
-	msg             *kafka.Message
-	reader          *kafka.Reader
-	rch             chan *kafka.Reader
-	once            sync.Once
-	async           bool
-	needack         bool
-	actualizeOffset func(o int64)
-}
-
-func (k *Message) Data() []byte {
-	return k.msg.Value
-}
-
-func (k *Message) Offset() int64 {
-	return k.msg.Offset
-}
-
-func (k *Message) returnReader() {
-	k.rch <- k.reader
-}
-
-func (k *Message) returnNewReader() {
-	k.rch <- kafka.NewReader(k.reader.Config())
-	k.reader.Close()
-}
-
-func (k *Message) Ack() error {
-	k.actualizeOffset(k.msg.Offset)
-	k.once.Do(k.returnReader)
-	if !k.needack {
-		return nil
-	}
-	err := k.reader.CommitMessages(context.Background(), *k.msg)
-	return err
-}
-
-func (k *Message) Nack() error {
-	if k.async {
-		return ErrAsyncNack
-	}
-	k.once.Do(k.returnNewReader)
-	return nil
 }
