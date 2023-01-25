@@ -22,8 +22,8 @@ func (k *Message) Data() []byte {
 
 func (k *Message) KVData() *KV {
 	return &KV{
-		Key:   k.msg.Value,
-		Value: k.msg.Key,
+		Key:   k.msg.Key,
+		Value: k.msg.Value,
 	}
 }
 
