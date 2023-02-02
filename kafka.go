@@ -92,7 +92,7 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 
 func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
 	fixDefaultTopicConfig(&cfg.DefaultTopicConfig, logger)
-	fixConfig(cfg, logger)
+	fixConfig(&cfg, logger)
 
 	q := &Queue{
 		cfg:    cfg,
@@ -105,7 +105,7 @@ func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
 	return q, nil
 }
 
-func fixConfig(cfg KafkaCfg, logger Logger) {
+func fixConfig(cfg *KafkaCfg, logger Logger) {
 	if cfg.ReaderQueueCapacity == 0 {
 		cfg.ReaderQueueCapacity = 100
 	}
