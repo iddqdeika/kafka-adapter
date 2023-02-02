@@ -92,6 +92,7 @@ func FromConfig(cfg Config, logger Logger) (*Queue, error) {
 
 func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
 	fixDefaultTopicConfig(&cfg.DefaultTopicConfig, logger)
+	fixConfig(cfg, logger)
 
 	q := &Queue{
 		cfg:    cfg,
@@ -102,6 +103,12 @@ func newKafkaQueue(cfg KafkaCfg, logger Logger) (*Queue, error) {
 		return nil, fmt.Errorf("error during kafka init: %v", err)
 	}
 	return q, nil
+}
+
+func fixConfig(cfg KafkaCfg, logger Logger) {
+	if cfg.ReaderQueueCapacity == 0 {
+		cfg.ReaderQueueCapacity = 100
+	}
 }
 
 func fixDefaultTopicConfig(cfg *TopicConfig, logger Logger) {
@@ -143,6 +150,10 @@ type KafkaCfg struct {
 	//but there is no possibility to provide Nack mechanism,
 	//thats why msg.Nack() will return error
 	AsyncAck bool
+
+	// The capacity of the internal message queue, defaults to 100 if none is
+	// set.
+	ReaderQueueCapacity int
 
 	QueueToReadNames  []string
 	QueueToWriteNames []string
@@ -241,14 +252,15 @@ func (q *Queue) ReaderRegister(topic string) {
 	q.readerOffsets[topic] = &offset
 	q.offsetLock.Unlock()
 	ch := make(chan *kafka.Reader, q.cfg.Concurrency)
-	msgChan := make(chan *Message)
+	msgChan := make(chan *Message, q.cfg.ReaderQueueCapacity)
 	for i := 0; i < q.cfg.Concurrency; i++ {
 		cfg := kafka.ReaderConfig{
-			Brokers:  q.cfg.Brokers,
-			GroupID:  q.cfg.ConsumerGroupID,
-			Topic:    topic,
-			MinBytes: 10e1,
-			MaxBytes: 10e5,
+			Brokers:       q.cfg.Brokers,
+			GroupID:       q.cfg.ConsumerGroupID,
+			Topic:         topic,
+			MinBytes:      10e1,
+			MaxBytes:      10e5,
+			QueueCapacity: q.cfg.ReaderQueueCapacity,
 		}
 		if q.cfg.AsyncAck {
 			cfg.CommitInterval = time.Second
