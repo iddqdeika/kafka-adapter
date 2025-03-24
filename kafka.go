@@ -428,6 +428,14 @@ func (q *Queue) PutBatch(queue string, data ...[]byte) error {
 }
 
 func (q *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byte) error {
+	msgs := make([]kafka.Message, 0)
+	for _, d := range data {
+		msgs = append(msgs, kafka.Message{Value: d})
+	}
+	q.PutMsgBatchWithCtx(ctx, queue, msgs...)
+}
+
+func (q *Queue) PutMsgBatchWithCtx(ctx context.Context, queue string, msgs... kafka.Message) error {
 	select {
 	case <-q.closed:
 		return ErrClosed
@@ -435,10 +443,6 @@ func (q *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byt
 
 	}
 
-	msgs := make([]kafka.Message, 0)
-	for _, d := range data {
-		msgs = append(msgs, kafka.Message{Value: d})
-	}
 	q.m.RLock()
 	wch, ok := q.writers[queue]
 	q.m.RUnlock()
