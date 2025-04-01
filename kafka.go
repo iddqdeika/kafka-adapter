@@ -432,7 +432,7 @@ func (q *Queue) PutBatchWithCtx(ctx context.Context, queue string, data ...[]byt
 	for _, d := range data {
 		msgs = append(msgs, kafka.Message{Value: d})
 	}
-	q.PutMsgBatchWithCtx(ctx, queue, msgs...)
+	return q.PutMsgBatchWithCtx(ctx, queue, msgs...)
 }
 
 func (q *Queue) PutMsgBatchWithCtx(ctx context.Context, queue string, msgs... kafka.Message) error {
